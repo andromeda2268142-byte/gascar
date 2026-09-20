@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,15 +23,19 @@ const rows = [
   ['✓', 'Privacy & account', 'Location, data and security'],
 ];
 
+type HistoryFilter = 'active' | 'completed' | 'cancelled';
+
 type ServiceHistoryItem = {
   id: string;
   service: string | null;
   status: string;
   accepted_business_id: string | null;
   customer_archived_at: string | null;
+  vehicle_label: string | null;
   created_at: string;
   updated_at: string;
   provider_name?: string | null;
+  rating?: number | null;
 };
 
 function initials(email?: string) {
@@ -43,6 +47,7 @@ function statusLabel(status: string) {
   if (status === 'in_progress') return 'In progress';
   if (status === 'accepted') return 'Accepted';
   if (status === 'completed') return 'Completed';
+  if (status === 'cancelled') return 'Cancelled';
   if (status === 'open') return 'Waiting';
   return status.replaceAll('_', ' ');
 }
@@ -52,6 +57,7 @@ export default function ProfileScreen() {
   const { user, loading, configured, signOut } = useAuth();
   const [history, setHistory] = useState<ServiceHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('active');
 
   const loadHistory = useCallback(async () => {
     if (!user || !isSupabaseConfigured) {
@@ -62,17 +68,25 @@ export default function ProfileScreen() {
     setHistoryLoading(true);
     try {
       const supabase = getSupabaseClient();
-      const { data: leads, error } = await supabase
-        .from('gascars_leads')
-        .select('id,service,status,accepted_business_id,customer_archived_at,created_at,updated_at')
-        .eq('customer_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(30);
+      const [leadsResult, reviewsResult] = await Promise.all([
+        supabase
+          .from('gascars_leads')
+          .select('id,service,status,accepted_business_id,customer_archived_at,vehicle_label,created_at,updated_at')
+          .eq('customer_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(50),
+        supabase
+          .from('gascars_reviews')
+          .select('lead_id,rating')
+          .eq('customer_id', user.id),
+      ]);
 
-      if (error) throw error;
+      if (leadsResult.error) throw leadsResult.error;
+      if (reviewsResult.error) throw reviewsResult.error;
 
+      const leads = leadsResult.data ?? [];
       const businessIds = Array.from(
-        new Set((leads ?? []).map((lead) => lead.accepted_business_id).filter(Boolean)),
+        new Set(leads.map((lead) => lead.accepted_business_id).filter(Boolean)),
       ) as string[];
 
       const names = new Map<string, string>();
@@ -85,12 +99,16 @@ export default function ProfileScreen() {
         for (const business of businesses ?? []) names.set(business.id, business.name);
       }
 
+      const ratings = new Map<string, number>();
+      for (const review of reviewsResult.data ?? []) ratings.set(review.lead_id, review.rating);
+
       setHistory(
-        (leads ?? []).map((lead) => ({
+        leads.map((lead) => ({
           ...lead,
           provider_name: lead.accepted_business_id
             ? names.get(lead.accepted_business_id) ?? null
             : null,
+          rating: ratings.get(lead.id) ?? null,
         })) as ServiceHistoryItem[],
       );
     } catch (error) {
@@ -113,12 +131,41 @@ export default function ProfileScreen() {
         { event: '*', schema: 'public', table: 'gascars_leads', filter: 'customer_id=eq.' + user.id },
         () => void loadHistory(),
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'gascars_reviews', filter: 'customer_id=eq.' + user.id },
+        () => void loadHistory(),
+      )
       .subscribe();
 
     return () => {
       void supabase.removeChannel(channel);
     };
   }, [loadHistory, user]);
+
+  const filteredHistory = useMemo(() => {
+    if (historyFilter === 'active') {
+      return history.filter((item) => ['open', 'accepted', 'in_progress'].includes(item.status));
+    }
+    return history.filter((item) => item.status === historyFilter);
+  }, [history, historyFilter]);
+
+  const historyCounts = useMemo(() => ({
+    active: history.filter((item) => ['open', 'accepted', 'in_progress'].includes(item.status)).length,
+    completed: history.filter((item) => item.status === 'completed').length,
+    cancelled: history.filter((item) => item.status === 'cancelled').length,
+  }), [history]);
+
+  function openHistoryItem(item: ServiceHistoryItem) {
+    if (['accepted', 'in_progress'].includes(item.status) && item.accepted_business_id) {
+      router.push({ pathname: '/lead-chat', params: { leadId: item.id } });
+      return;
+    }
+
+    if (item.status === 'completed' && item.accepted_business_id) {
+      router.push({ pathname: '/provider-profile', params: { businessId: item.accepted_business_id } });
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -153,46 +200,86 @@ export default function ProfileScreen() {
         {user ? (
           <View style={styles.historySection}>
             <SectionTitle title="Service history" right={historyLoading ? 'Syncing…' : undefined} />
-            {history.length ? (
+            <View style={styles.historyTabs}>
+              {([
+                ['active', 'Active'],
+                ['completed', 'Completed'],
+                ['cancelled', 'Cancelled'],
+              ] as Array<[HistoryFilter, string]>).map(([value, label]) => {
+                const active = historyFilter === value;
+                return (
+                  <Pressable
+                    key={value}
+                    onPress={() => setHistoryFilter(value)}
+                    style={[styles.historyTab, active && styles.historyTabActive]}
+                  >
+                    <Text style={[styles.historyTabText, active && styles.historyTabTextActive]}>{label}</Text>
+                    <View style={[styles.historyCount, active && styles.historyCountActive]}>
+                      <Text style={[styles.historyCountText, active && styles.historyCountTextActive]}>
+                        {historyCounts[value]}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {filteredHistory.length ? (
               <View style={styles.historyList}>
-                {history.map((item) => (
-                  <View key={item.id} style={styles.historyCard}>
-                    <Pressable
-                      disabled={!item.accepted_business_id || item.status === 'cancelled'}
-                      onPress={() => item.accepted_business_id && item.status !== 'cancelled'
-                        ? router.push({ pathname: '/lead-chat', params: { leadId: item.id } })
-                        : undefined}
-                      style={styles.historyMain}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.historyService}>{item.service || 'Service request'}</Text>
-                        <Text style={styles.historyProvider}>
-                          {item.provider_name || (item.accepted_business_id ? 'Matched provider' : 'No provider yet')}
-                        </Text>
-                        <Text style={styles.historyDate}>{new Date(item.created_at).toLocaleDateString()}</Text>
-                      </View>
-                      <View style={[
-                        styles.statusPill,
-                        item.status === 'completed'
-                          ? styles.statusDone
-                          : item.status === 'cancelled'
-                            ? styles.statusCancelled
-                            : item.status === 'in_progress'
-                              ? styles.statusActive
-                              : item.status === 'accepted'
-                                ? styles.statusAccepted
-                                : styles.statusWaiting,
-                      ]}>
-                        <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
-                      </View>
-                    </Pressable>
-                  </View>
-                ))}
+                {filteredHistory.map((item) => {
+                  const interactive = Boolean(item.accepted_business_id) && item.status !== 'cancelled' && item.status !== 'open';
+                  return (
+                    <View key={item.id} style={styles.historyCard}>
+                      <Pressable
+                        disabled={!interactive}
+                        onPress={() => openHistoryItem(item)}
+                        style={({ pressed }) => [styles.historyMain, pressed && interactive && { opacity: 0.78 }]}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.historyService}>{item.service || 'Service request'}</Text>
+                          {item.vehicle_label ? <Text style={styles.historyVehicle}>🚘 {item.vehicle_label}</Text> : null}
+                          <Text style={styles.historyProvider}>
+                            {item.provider_name || (item.accepted_business_id ? 'Matched provider' : 'Searching for provider')}
+                          </Text>
+                          <View style={styles.historyBottomRow}>
+                            <Text style={styles.historyDate}>{new Date(item.created_at).toLocaleDateString()}</Text>
+                            {item.rating ? <Text style={styles.historyRating}>{'★'.repeat(item.rating)}{'☆'.repeat(5 - item.rating)}</Text> : null}
+                          </View>
+                        </View>
+                        <View style={styles.historyRight}>
+                          <View style={[
+                            styles.statusPill,
+                            item.status === 'completed'
+                              ? styles.statusDone
+                              : item.status === 'cancelled'
+                                ? styles.statusCancelled
+                                : item.status === 'in_progress'
+                                  ? styles.statusActive
+                                  : item.status === 'accepted'
+                                    ? styles.statusAccepted
+                                    : styles.statusWaiting,
+                          ]}>
+                            <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
+                          </View>
+                          {interactive ? (
+                            <Text style={styles.historyAction}>
+                              {item.status === 'completed' ? 'Provider ›' : 'Open ›'}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </Pressable>
+                    </View>
+                  );
+                })}
               </View>
             ) : (
               <Card style={styles.emptyHistory}>
-                <Text style={styles.emptyHistoryTitle}>No service history yet</Text>
-                <Text style={styles.emptyHistoryText}>Requests you create will appear here.</Text>
+                <Text style={styles.emptyHistoryTitle}>
+                  {historyFilter === 'active' ? 'No active services' : historyFilter === 'completed' ? 'No completed services yet' : 'No cancelled services'}
+                </Text>
+                <Text style={styles.emptyHistoryText}>
+                  {historyFilter === 'active' ? 'New requests and active jobs will appear here.' : 'Your service history stays organized here.'}
+                </Text>
               </Card>
             )}
           </View>
@@ -233,12 +320,26 @@ const styles = StyleSheet.create({
   accountAction: { marginTop: 9, marginBottom: 24 },
   signInWrap: { marginTop: 2 },
   historySection: { marginBottom: 24 },
+  historyTabs: { flexDirection: 'row', gap: 7, marginBottom: 10 },
+  historyTab: { flex: 1, minHeight: 44, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 7 },
+  historyTabActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  historyTabText: { color: colors.muted, fontSize: 9, fontWeight: '900' },
+  historyTabTextActive: { color: colors.white },
+  historyCount: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: '#ECE9E0', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+  historyCountActive: { backgroundColor: colors.lime },
+  historyCountText: { color: colors.ink, fontSize: 7.5, fontWeight: '950' },
+  historyCountTextActive: { color: colors.ink },
   historyList: { gap: 8 },
   historyCard: { borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
-  historyMain: { minHeight: 82, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  historyMain: { minHeight: 98, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
   historyService: { color: colors.ink, fontSize: 12.5, fontWeight: '950' },
+  historyVehicle: { color: colors.ink, fontSize: 9, fontWeight: '800', marginTop: 5 },
   historyProvider: { color: colors.muted, fontSize: 9.5, marginTop: 4 },
-  historyDate: { color: '#A0A39B', fontSize: 8.5, marginTop: 4 },
+  historyBottomRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5 },
+  historyDate: { color: '#A0A39B', fontSize: 8.5 },
+  historyRating: { color: '#F5B63D', fontSize: 9, letterSpacing: 0.5 },
+  historyRight: { alignItems: 'flex-end', gap: 8 },
+  historyAction: { color: colors.coral, fontSize: 8.5, fontWeight: '950' },
   statusPill: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
   statusWaiting: { backgroundColor: colors.sunSoft },
   statusAccepted: { backgroundColor: colors.violetSoft },
