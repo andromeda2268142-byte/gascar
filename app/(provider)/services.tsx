@@ -92,7 +92,12 @@ export default function ProviderServicesScreen() {
     void load();
   }, [load]);
 
-  const visibleServices = useMemo(() => filterServices(catalog, search), [catalog, search]);
+  const visibleServices = useMemo(() => {
+    if (search.trim().length < 2) {
+      return catalog.filter((service) => Boolean(offerings[service.id]));
+    }
+    return filterServices(catalog, search);
+  }, [catalog, offerings, search]);
 
   async function toggleService(service: ServiceCatalogItem) {
     if (!business) return;
@@ -259,8 +264,14 @@ export default function ProviderServicesScreen() {
 
         {!visibleServices.length ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No matching services</Text>
-            <Text style={styles.emptyText}>Try another keyword. The admin can also add new services to the system catalog.</Text>
+            <Text style={styles.emptyTitle}>
+              {search.trim().length < 2 ? 'Search the service catalog' : 'No matching services'}
+            </Text>
+            <Text style={styles.emptyText}>
+              {search.trim().length < 2
+                ? 'Your selected services appear here. Type at least 2 characters to find and add another service.'
+                : 'Try another keyword or spelling. Search tolerates small typing mistakes.'}
+            </Text>
           </View>
         ) : null}
       </ScrollView>
