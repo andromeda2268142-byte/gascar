@@ -50,8 +50,10 @@ export default function AuthScreen() {
         if (error) throw error;
 
         if (!data.session) {
-          Alert.alert('Check your email', 'Your account was created. Confirm your email to finish signing in.');
-          setMode('signin');
+          router.replace({
+            pathname: '/verify-email',
+            params: { email: email.trim().toLowerCase() },
+          });
           return;
         }
       } else {
