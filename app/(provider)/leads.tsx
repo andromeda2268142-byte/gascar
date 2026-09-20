@@ -39,6 +39,7 @@ type Contact = {
   pickup_address: string | null;
   destination_address: string | null;
   preferred_contact_method: 'app' | 'phone' | 'email';
+  preferred_contact_methods: Array<'app' | 'phone' | 'email'>;
 };
 
 type Filter = 'available' | 'active' | 'completed';
@@ -162,7 +163,7 @@ export default function ProviderLeadsScreen() {
       if (acceptedIds.length) {
         const { data: contactRows, error: contactError } = await supabase
           .from('gascars_lead_contacts')
-          .select('lead_id,contact_name,contact_phone,contact_email,pickup_address,destination_address,preferred_contact_method')
+          .select('lead_id,contact_name,contact_phone,contact_email,pickup_address,destination_address,preferred_contact_method,preferred_contact_methods')
           .in('lead_id', acceptedIds);
 
         if (contactError) throw contactError;
@@ -385,6 +386,9 @@ export default function ProviderLeadsScreen() {
 
         {visibleLeads.length ? visibleLeads.map((lead) => {
           const contact = contacts[lead.id];
+          const preferredMethods = contact?.preferred_contact_methods?.length
+            ? contact.preferred_contact_methods
+            : [contact?.preferred_contact_method || 'app'];
           const acceptedByThisBusiness = lead.accepted_business_id === business.id;
           const canAfford = credits >= lead.credit_cost;
 
@@ -417,54 +421,41 @@ export default function ProviderLeadsScreen() {
                   {(contact?.pickup_address || lead.pickup_address) ? <Text style={styles.contactLine}>Pickup · {contact?.pickup_address || lead.pickup_address}</Text> : null}
                   {(contact?.destination_address || lead.destination_address) ? <Text style={styles.contactLine}>Destination · {contact?.destination_address || lead.destination_address}</Text> : null}
                   <Text style={styles.preferredContact}>
-                    Preferred contact · {(contact?.preferred_contact_method || 'app').toUpperCase()}
+                    Preferred · {preferredMethods.map((method) => method === 'app' ? 'MESSAGE' : method.toUpperCase()).join(' · ')}
                   </Text>
                   <View style={styles.contactActions}>
-                    {contact?.contact_phone ? (
+                    {preferredMethods.includes('phone') && contact?.contact_phone ? (
                       <Pressable
                         onPress={() => void Linking.openURL('tel:' + contact.contact_phone)}
-                        style={[
-                          styles.contactAction,
-                          contact.preferred_contact_method === 'phone' && styles.contactActionPreferred,
-                        ]}
+                        style={[styles.contactAction, styles.contactActionPreferred]}
                       >
-                        <Text style={[
-                          styles.contactActionText,
-                          contact.preferred_contact_method === 'phone' && styles.contactActionTextPreferred,
-                        ]}>Call</Text>
+                        <Text style={[styles.contactActionIcon, styles.contactActionIconPreferred]}>☎</Text>
+                        <Text style={[styles.contactActionText, styles.contactActionTextPreferred]}>Call</Text>
                       </Pressable>
                     ) : null}
 
-                    {contact?.contact_email ? (
+                    {preferredMethods.includes('email') && contact?.contact_email ? (
                       <Pressable
                         onPress={() => void Linking.openURL(
                           'mailto:' + encodeURIComponent(contact.contact_email) +
                           '?subject=' + encodeURIComponent("Gas Car's · " + (lead.service || 'Service request')),
                         )}
-                        style={[
-                          styles.contactAction,
-                          contact.preferred_contact_method === 'email' && styles.contactActionPreferred,
-                        ]}
+                        style={[styles.contactAction, styles.contactActionPreferred]}
                       >
-                        <Text style={[
-                          styles.contactActionText,
-                          contact.preferred_contact_method === 'email' && styles.contactActionTextPreferred,
-                        ]}>Email</Text>
+                        <Text style={[styles.contactActionIcon, styles.contactActionIconPreferred]}>✉</Text>
+                        <Text style={[styles.contactActionText, styles.contactActionTextPreferred]}>Email</Text>
                       </Pressable>
                     ) : null}
 
-                    <Pressable
-                      onPress={() => router.push({ pathname: '/lead-chat', params: { leadId: lead.id } })}
-                      style={[
-                        styles.contactAction,
-                        contact?.preferred_contact_method === 'app' && styles.contactActionPreferred,
-                      ]}
-                    >
-                      <Text style={[
-                        styles.contactActionText,
-                        contact?.preferred_contact_method === 'app' && styles.contactActionTextPreferred,
-                      ]}>Message</Text>
-                    </Pressable>
+                    {preferredMethods.includes('app') ? (
+                      <Pressable
+                        onPress={() => router.push({ pathname: '/lead-chat', params: { leadId: lead.id } })}
+                        style={[styles.contactAction, styles.contactActionPreferred]}
+                      >
+                        <Text style={[styles.contactActionIcon, styles.contactActionIconPreferred]}>💬</Text>
+                        <Text style={[styles.contactActionText, styles.contactActionTextPreferred]}>Message</Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                 </View>
               ) : null}
@@ -583,8 +574,10 @@ const styles = StyleSheet.create({
   contactLine: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
   preferredContact: { color: '#3E8E73', fontSize: 8.5, fontWeight: '900', marginTop: 9 },
   contactActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 },
-  contactAction: { minHeight: 38, borderRadius: 12, backgroundColor: colors.white, borderWidth: 1, borderColor: '#BFDCCF', paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
+  contactAction: { minHeight: 42, borderRadius: 12, backgroundColor: colors.white, borderWidth: 1, borderColor: '#BFDCCF', paddingHorizontal: 12, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center' },
   contactActionPreferred: { backgroundColor: colors.ink, borderColor: colors.ink },
+  contactActionIcon: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  contactActionIconPreferred: { color: colors.lime },
   contactActionText: { color: colors.ink, fontSize: 9.5, fontWeight: '950' },
   contactActionTextPreferred: { color: colors.lime },
   primaryButton: { minHeight: 48, borderRadius: 15, backgroundColor: colors.coral, alignItems: 'center', justifyContent: 'center', marginTop: 13, paddingHorizontal: 12 },
