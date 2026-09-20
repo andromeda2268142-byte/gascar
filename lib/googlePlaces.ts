@@ -12,6 +12,7 @@ export type AddressPlace = {
   formattedAddress: string;
   latitude: number | null;
   longitude: number | null;
+  postalCode: string | null;
 };
 
 function apiKey() {
@@ -119,7 +120,7 @@ export async function loadGoogleAddress(placeId: string): Promise<AddressPlace> 
     {
       headers: {
         'X-Goog-Api-Key': key,
-        'X-Goog-FieldMask': 'id,formattedAddress,location',
+        'X-Goog-FieldMask': 'id,formattedAddress,location,addressComponents',
       },
     },
   );
@@ -135,12 +136,22 @@ export async function loadGoogleAddress(placeId: string): Promise<AddressPlace> 
       latitude?: number;
       longitude?: number;
     };
+    addressComponents?: Array<{
+      longText?: string;
+      shortText?: string;
+      types?: string[];
+    }>;
   };
+
+  const postalCode = place.addressComponents?.find((component) =>
+    component.types?.includes('postal_code'),
+  )?.longText ?? null;
 
   return {
     placeId: place.id ?? placeId,
     formattedAddress: place.formattedAddress ?? '',
     latitude: place.location?.latitude ?? null,
     longitude: place.location?.longitude ?? null,
+    postalCode,
   };
 }
