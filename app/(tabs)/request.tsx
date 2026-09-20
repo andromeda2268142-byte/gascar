@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AddressSearchField } from '@/components/AddressSearchField';
@@ -194,7 +194,7 @@ export default function RequestScreen() {
       }
 
       if (!profileResult.error && profileResult.data) {
-        setContactName((current) => current || profileResult.data?.display_name || '');
+        setContactName((current) => current || profileResult.data?.display_name || user.user_metadata?.full_name || '');
         setContactPhone((current) => current || profileResult.data?.phone || '');
       }
       setContactEmail((current) => current || user.email || '');
@@ -230,8 +230,13 @@ export default function RequestScreen() {
     }
   }, [requestedVehicleId, user]);
 
+  useFocusEffect(
+    useCallback(() => {
+      void loadMyRequests();
+    }, [loadMyRequests]),
+  );
+
   useEffect(() => {
-    void loadMyRequests();
     if (!user || !isSupabaseConfigured) return;
 
     const supabase = getSupabaseClient();
