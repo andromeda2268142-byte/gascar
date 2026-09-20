@@ -44,17 +44,17 @@ function editDistance(a: string, b: string) {
   if (!a.length) return b.length;
   if (!b.length) return a.length;
 
-  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
-  const current = new Array<number>(b.length + 1);
+  let previousPrevious = Array.from({ length: b.length + 1 }, (_, index) => index);
+  let previous = [...previousPrevious];
 
   for (let i = 1; i <= a.length; i += 1) {
+    const current = new Array<number>(b.length + 1);
     current[0] = i;
 
     for (let j = 1; j <= b.length; j += 1) {
       const substitution = previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1);
       const insertion = current[j - 1] + 1;
       const deletion = previous[j] + 1;
-
       let best = Math.min(substitution, insertion, deletion);
 
       if (
@@ -63,13 +63,14 @@ function editDistance(a: string, b: string) {
         a[i - 1] === b[j - 2] &&
         a[i - 2] === b[j - 1]
       ) {
-        best = Math.min(best, previous[j - 2] + 1);
+        best = Math.min(best, previousPrevious[j - 2] + 1);
       }
 
       current[j] = best;
     }
 
-    for (let j = 0; j <= b.length; j += 1) previous[j] = current[j];
+    previousPrevious = previous;
+    previous = current;
   }
 
   return previous[b.length];
@@ -82,7 +83,7 @@ function tokenScore(queryToken: string, candidate: string) {
   if (queryToken.length >= 3 && candidate.includes(queryToken)) return 7;
 
   const allowedDistance =
-    queryToken.length >= 8 ? 2 :
+    queryToken.length >= 5 ? 2 :
     queryToken.length >= 4 ? 1 :
     0;
 
