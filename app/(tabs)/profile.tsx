@@ -52,7 +52,6 @@ export default function ProfileScreen() {
   const { user, loading, configured, signOut } = useAuth();
   const [history, setHistory] = useState<ServiceHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [workingId, setWorkingId] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     if (!user || !isSupabaseConfigured) {
@@ -121,27 +120,6 @@ export default function ProfileScreen() {
     };
   }, [loadHistory, user]);
 
-  async function restoreToCurrent(item: ServiceHistoryItem) {
-    if (workingId) return;
-
-    setWorkingId(item.id);
-    try {
-      const { error } = await getSupabaseClient().rpc('gascars_customer_set_case_archived', {
-        p_lead_id: item.id,
-        p_archived: false,
-        p_reason: null,
-      });
-
-      if (error) throw error;
-      await loadHistory();
-      router.push('/(tabs)/request');
-    } catch (error) {
-      Alert.alert('Could not restore service', error instanceof Error ? error.message : 'Please try again.');
-    } finally {
-      setWorkingId(null);
-    }
-  }
-
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -180,8 +158,8 @@ export default function ProfileScreen() {
                 {history.map((item) => (
                   <View key={item.id} style={styles.historyCard}>
                     <Pressable
-                      disabled={!item.accepted_business_id}
-                      onPress={() => item.accepted_business_id
+                      disabled={!item.accepted_business_id || item.status === 'cancelled'}
+                      onPress={() => item.accepted_business_id && item.status !== 'cancelled'
                         ? router.push({ pathname: '/lead-chat', params: { leadId: item.id } })
                         : undefined}
                       style={styles.historyMain}
@@ -197,30 +175,17 @@ export default function ProfileScreen() {
                         styles.statusPill,
                         item.status === 'completed'
                           ? styles.statusDone
-                          : item.status === 'in_progress'
-                            ? styles.statusActive
-                            : item.status === 'accepted'
-                              ? styles.statusAccepted
-                              : styles.statusWaiting,
+                          : item.status === 'cancelled'
+                            ? styles.statusCancelled
+                            : item.status === 'in_progress'
+                              ? styles.statusActive
+                              : item.status === 'accepted'
+                                ? styles.statusAccepted
+                                : styles.statusWaiting,
                       ]}>
                         <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
                       </View>
                     </Pressable>
-
-                    {item.customer_archived_at ? (
-                      <View style={styles.archivedRow}>
-                        <Text style={styles.archivedText}>Hidden from Current Service</Text>
-                        {['accepted', 'in_progress'].includes(item.status) ? (
-                          <Pressable
-                            disabled={workingId === item.id}
-                            onPress={() => void restoreToCurrent(item)}
-                            style={({ pressed }) => [styles.restoreButton, (pressed || workingId === item.id) && { opacity: 0.6 }]}
-                          >
-                            <Text style={styles.restoreButtonText}>
-                              {workingId === item.id ? 'Restoring…' : 'Show again'}
-                            </Text>
-                          </Pressable>
-                        ) : null}
                       </View>
                     ) : null}
                   </View>
@@ -281,11 +246,8 @@ const styles = StyleSheet.create({
   statusAccepted: { backgroundColor: colors.violetSoft },
   statusActive: { backgroundColor: colors.coralSoft },
   statusDone: { backgroundColor: colors.limeSoft },
+  statusCancelled: { backgroundColor: '#F4DDD7' },
   statusText: { color: colors.ink, fontSize: 8, fontWeight: '950', textTransform: 'uppercase' },
-  archivedRow: { borderTopWidth: 1, borderTopColor: colors.line, backgroundColor: '#F8F6F0', paddingHorizontal: 12, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  archivedText: { color: colors.muted, fontSize: 8.5, fontWeight: '800' },
-  restoreButton: { minHeight: 32, borderRadius: 10, backgroundColor: colors.ink, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
-  restoreButtonText: { color: colors.lime, fontSize: 8.5, fontWeight: '950' },
   emptyHistory: { marginBottom: 4 },
   emptyHistoryTitle: { color: colors.ink, fontSize: 11.5, fontWeight: '950' },
   emptyHistoryText: { color: colors.muted, fontSize: 9.5, marginTop: 3 },
