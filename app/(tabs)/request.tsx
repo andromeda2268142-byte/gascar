@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AddressSearchField } from '@/components/AddressSearchField';
@@ -35,12 +35,38 @@ const locationChoices: Array<{ value: ServiceLocation; title: string }> = [
 
 type ContactMethod = 'app' | 'phone' | 'email';
 
+type DriverVehicle = {
+  id: string;
+  year: number | null;
+  make: string;
+  model: string;
+  trim: string | null;
+  mileage: number | null;
+  fuel_type: string | null;
+  is_primary: boolean;
+};
+
+type RequestSuccess = {
+  service: string;
+  vehicle: string | null;
+  location: string;
+};
+
+type ReviewComplete = {
+  provider: string;
+  service: string;
+};
+
 type MyRequest = {
   id: string;
   service: string | null;
   status: string;
   accepted_business_id: string | null;
   customer_archived_at: string | null;
+  vehicle_label: string | null;
+  zip: string | null;
+  pickup_address: string | null;
+  destination_address: string | null;
   created_at: string;
   updated_at: string;
   provider_name?: string | null;
@@ -59,7 +85,14 @@ type DriverNotification = {
 
 export default function RequestScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    category?: string | string[];
+    vehicleId?: string | string[];
+  }>();
   const { user } = useAuth();
+
+  const requestedCategory = Array.isArray(params.category) ? params.category[0] : params.category;
+  const requestedVehicleId = Array.isArray(params.vehicleId) ? params.vehicleId[0] : params.vehicleId;
 
   const [category, setCategory] = useState<ServiceCategory>('repair');
   const [catalog, setCatalog] = useState<ServiceCatalogItem[]>([]);
@@ -72,6 +105,8 @@ export default function RequestScreen() {
   const [contactPhone, setContactPhone] = useState('');
   const [contactEmail, setContactEmail] = useState(user?.email ?? '');
   const [preferredContacts, setPreferredContacts] = useState<ContactMethod[]>(['app']);
+  const [vehicles, setVehicles] = useState<DriverVehicle[]>([]);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(requestedVehicleId ?? null);
   const [myRequests, setMyRequests] = useState<MyRequest[]>([]);
   const [notifications, setNotifications] = useState<DriverNotification[]>([]);
   const [reviewedLeadIds, setReviewedLeadIds] = useState<string[]>([]);
@@ -79,6 +114,8 @@ export default function RequestScreen() {
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewWorking, setReviewWorking] = useState(false);
+  const [reviewComplete, setReviewComplete] = useState<ReviewComplete | null>(null);
+  const [requestSuccess, setRequestSuccess] = useState<RequestSuccess | null>(null);
   const [loadingMyRequests, setLoadingMyRequests] = useState(false);
   const [cancelWorkingId, setCancelWorkingId] = useState<string | null>(null);
   const [pickup, setPickup] = useState('');
@@ -105,10 +142,10 @@ export default function RequestScreen() {
     setLoadingMyRequests(true);
     try {
       const supabase = getSupabaseClient();
-      const [leadsResult, notificationsResult, reviewsResult] = await Promise.all([
+      const [leadsResult, notificationsResult, reviewsResult, vehiclesResult, profileResult] = await Promise.all([
         supabase
           .from('gascars_leads')
-          .select('id,service,status,accepted_business_id,customer_archived_at,created_at,updated_at')
+          .select('id,service,status,accepted_business_id,customer_archived_at,vehicle_label,zip,pickup_address,destination_address,created_at,updated_at')
           .eq('customer_id', user.id)
           .order('created_at', { ascending: false })
           .limit(8),
@@ -122,6 +159,17 @@ export default function RequestScreen() {
           .from('gascars_reviews')
           .select('lead_id')
           .eq('customer_id', user.id),
+        supabase
+          .from('gascars_vehicles')
+          .select('id,year,make,model,trim,mileage,fuel_type,is_primary')
+          .eq('user_id', user.id)
+          .order('is_primary', { ascending: false })
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('gascars_profiles')
+          .select('display_name,phone')
+          .eq('id', user.id)
+          .maybeSingle(),
       ]);
 
       if (leadsResult.error) throw leadsResult.error;
@@ -131,6 +179,24 @@ export default function RequestScreen() {
       const leads = leadsResult.data ?? [];
       setNotifications((notificationsResult.data ?? []) as DriverNotification[]);
       setReviewedLeadIds((reviewsResult.data ?? []).map((review) => review.lead_id));
+
+      if (!vehiclesResult.error) {
+        const nextVehicles = (vehiclesResult.data ?? []) as DriverVehicle[];
+        setVehicles(nextVehicles);
+        setSelectedVehicleId((current) => {
+          if (requestedVehicleId && nextVehicles.some((vehicle) => vehicle.id === requestedVehicleId)) {
+            return requestedVehicleId;
+          }
+          if (current && nextVehicles.some((vehicle) => vehicle.id === current)) return current;
+          return nextVehicles.find((vehicle) => vehicle.is_primary)?.id ?? nextVehicles[0]?.id ?? null;
+        });
+      }
+
+      if (!profileResult.error && profileResult.data) {
+        setContactName((current) => current || profileResult.data?.display_name || '');
+        setContactPhone((current) => current || profileResult.data?.phone || '');
+      }
+      setContactEmail((current) => current || user.email || '');
 
       const businessIds = Array.from(
         new Set(leads.map((lead) => lead.accepted_business_id).filter(Boolean)),
@@ -161,7 +227,7 @@ export default function RequestScreen() {
     } finally {
       setLoadingMyRequests(false);
     }
-  }, [user]);
+  }, [requestedVehicleId, user]);
 
   useEffect(() => {
     void loadMyRequests();
@@ -223,6 +289,26 @@ export default function RequestScreen() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (requestedCategory === 'towing' && category !== 'towing') {
+      changeCategory('towing');
+    } else if (requestedCategory === 'repair' && category !== 'repair') {
+      changeCategory('repair');
+    }
+  }, [requestedCategory]);
+
+  const selectedVehicle = useMemo(
+    () => vehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null,
+    [selectedVehicleId, vehicles],
+  );
+
+  const selectedVehicleLabel = useMemo(
+    () => selectedVehicle
+      ? [selectedVehicle.year, selectedVehicle.make, selectedVehicle.model].filter(Boolean).join(' ')
+      : null,
+    [selectedVehicle],
+  );
 
   const categoryServices = useMemo(
     () => catalog.filter((item) => item.category === category),
