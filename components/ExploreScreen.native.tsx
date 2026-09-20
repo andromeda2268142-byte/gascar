@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import MapView, { Marker, type Region } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '@/constants/theme';
 import { mapPlaces, type MapCategory, type MapPlace } from '@/data/mapPlaces';
@@ -42,6 +43,7 @@ function markerLabel(place: MapPlace) {
 }
 
 export default function ExploreScreen() {
+  const router = useRouter();
   const mapRef = useRef<MapView>(null);
   const [category, setCategory] = useState<MapCategory>('gas');
   const [selected, setSelected] = useState<MapPlace | null>(null);
@@ -58,6 +60,11 @@ export default function ExploreScreen() {
   }, [category, search]);
 
   function selectCategory(nextCategory: MapCategory) {
+    if (nextCategory === 'mechanic') {
+      router.push('/(tabs)/request');
+      return;
+    }
+
     setCategory(nextCategory);
     setSelected(null);
     const first = mapPlaces.find((place) => place.category === nextCategory);
@@ -159,7 +166,7 @@ export default function ExploreScreen() {
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Buscar gasolina, taller, grúa..."
+              placeholder="Buscar gasolina, grúa, autopartes..."
               placeholderTextColor="#8E9188"
               style={styles.searchInput}
               autoCorrect={false}
