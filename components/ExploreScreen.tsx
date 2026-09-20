@@ -13,13 +13,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '@/constants/theme';
 import { mapPlaces, type MapCategory, type MapPlace } from '@/data/mapPlaces';
 
-const filters: Array<{ key: MapCategory; label: string; icon: string }> = [
-  { key: 'gas', label: 'Gasolina', icon: '⛽' },
-  { key: 'mechanic', label: 'Talleres', icon: '🔧' },
-  { key: 'towing', label: 'Grúas', icon: '🚚' },
-  { key: 'parts', label: 'Autopartes', icon: '⚙️' },
-];
-
 function money(value?: number) {
   return typeof value === 'number' ? '$' + value.toFixed(2) : '—';
 }
