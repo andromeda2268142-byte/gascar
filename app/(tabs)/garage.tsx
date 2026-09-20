@@ -166,7 +166,7 @@ export default function GarageScreen() {
             <Text style={styles.title}>Your vehicles</Text>
             <Text style={styles.subtitle}>Choose a vehicle once and Gas Car's can reuse it in service requests.</Text>
           </View>
-          <Pressable onPress={() => setShowAdd(true)} style={styles.addButton}>
+          <Pressable onPress={() => user ? setShowAdd(true) : router.push('/auth')} style={styles.addButton}>
             <Text style={styles.addButtonText}>＋</Text>
           </Pressable>
         </View>
