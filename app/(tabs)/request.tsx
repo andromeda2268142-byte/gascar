@@ -68,7 +68,7 @@ export default function RequestScreen() {
   const [contactName, setContactName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [contactEmail, setContactEmail] = useState(user?.email ?? '');
-  const [preferredContact, setPreferredContact] = useState<ContactMethod>('app');
+  const [preferredContacts, setPreferredContacts] = useState<ContactMethod[]>(['app']);
   const [myRequests, setMyRequests] = useState<MyRequest[]>([]);
   const [notifications, setNotifications] = useState<DriverNotification[]>([]);
   const [loadingMyRequests, setLoadingMyRequests] = useState(false);
@@ -339,16 +339,16 @@ export default function RequestScreen() {
       nextErrors.issue = 'Describe the problem in at least a few words.';
     }
 
-    if (!contactPhone.trim() && !contactEmail.trim() && preferredContact !== 'app') {
-      nextErrors.contact = 'Add a phone number or email so the provider can contact you.';
+    if (!preferredContacts.length) {
+      nextErrors.contact = 'Select at least one contact method.';
     }
 
-    if (preferredContact === 'phone' && !contactPhone.trim()) {
-      nextErrors.contact = 'Add a phone number to use Phone as your preferred contact method.';
+    if (preferredContacts.includes('phone') && !contactPhone.trim()) {
+      nextErrors.contact = 'Add a phone number to use Phone.';
     }
 
-    if (preferredContact === 'email' && !contactEmail.trim()) {
-      nextErrors.contact = 'Add an email address to use Email as your preferred contact method.';
+    if (preferredContacts.includes('email') && !contactEmail.trim()) {
+      nextErrors.contact = 'Add an email address to use Email.';
     }
 
     if (Object.keys(nextErrors).length > 0) {
@@ -362,7 +362,7 @@ export default function RequestScreen() {
 
     try {
       const supabase = getSupabaseClient();
-      const { error } = await supabase.rpc('gascars_create_lead_v3', {
+      const { error } = await supabase.rpc('gascars_create_lead_v4', {
         p_category: category,
         p_service_id: selectedService.id,
         p_service_location: serviceLocation,
@@ -370,7 +370,7 @@ export default function RequestScreen() {
         p_contact_name: contactName,
         p_contact_phone: contactPhone,
         p_contact_email: contactEmail,
-        p_preferred_contact_method: preferredContact,
+        p_preferred_contact_methods: preferredContacts,
         p_vehicle_id: null,
         p_preferred_time: 'As soon as possible',
         p_zip: zip,
@@ -721,26 +721,42 @@ export default function RequestScreen() {
             <Text style={styles.label}>Preferred contact method</Text>
             <View style={styles.contactMethodRow}>
               {([
-                ['app', 'In-app', 'Fastest and keeps everything with your request'],
-                ['phone', 'Phone', 'Provider can call you after accepting'],
-                ['email', 'Email', 'Provider can email you after accepting'],
-              ] as Array<[ContactMethod, string, string]>).map(([value, label, detail]) => {
-                const active = preferredContact === value;
+                ['app', 'Message', '💬'],
+                ['phone', 'Phone', '☎'],
+                ['email', 'Email', '✉'],
+              ] as Array<[ContactMethod, string, string]>).map(([value, label, icon]) => {
+                const active = preferredContacts.includes(value);
+
                 return (
                   <Pressable
                     key={value}
                     onPress={() => {
-                      setPreferredContact(value);
+                      setPreferredContacts((current) => {
+                        if (current.includes(value)) {
+                          return current.length === 1
+                            ? current
+                            : current.filter((item) => item !== value);
+                        }
+                        return [...current, value];
+                      });
                       setErrors((current) => ({ ...current, contact: undefined }));
                     }}
-                    style={[styles.contactMethod, active && styles.contactMethodActive]}
+                    style={({ pressed }) => [
+                      styles.contactMethod,
+                      active && styles.contactMethodActive,
+                      pressed && { opacity: 0.82 },
+                    ]}
                   >
+                    <View style={[styles.contactMethodIconWrap, active && styles.contactMethodIconWrapActive]}>
+                      <Text style={[styles.contactMethodIcon, active && styles.contactMethodIconActive]}>{icon}</Text>
+                    </View>
                     <Text style={[styles.contactMethodLabel, active && styles.contactMethodLabelActive]}>{label}</Text>
-                    <Text style={styles.contactMethodDetail}>{detail}</Text>
+                    {active ? <View style={styles.contactMethodCheck}><Text style={styles.contactMethodCheckText}>✓</Text></View> : null}
                   </Pressable>
                 );
               })}
             </View>
+            <Text style={styles.contactMethodHelp}>You can select more than 1 method.</Text>
             <Text style={styles.label}>Name</Text>
             <TextInput value={contactName} onChangeText={setContactName} placeholder="Your name" placeholderTextColor="#A1A39C" style={styles.input} />
             <Text style={styles.label}>Phone</Text>
@@ -897,11 +913,17 @@ const styles = StyleSheet.create({
   fieldError: { color: colors.coral, fontSize: 10.5, fontWeight: '800', marginTop: 7, marginLeft: 4 },
   fieldErrorInside: { color: colors.coral, fontSize: 10, fontWeight: '800', marginTop: -2, marginBottom: 3 },
   privacyNote: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginBottom: 2 },
-  contactMethodRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
-  contactMethod: { flexGrow: 1, flexBasis: '30%', minWidth: 105, minHeight: 76, borderRadius: 14, backgroundColor: '#F2F0E9', borderWidth: 1, borderColor: colors.line, padding: 10 },
+  contactMethodRow: { flexDirection: 'row', gap: 8 },
+  contactMethod: { flex: 1, minHeight: 94, borderRadius: 18, backgroundColor: '#F2F0E9', borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', paddingVertical: 11, paddingHorizontal: 7, position: 'relative' },
   contactMethodActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  contactMethodIconWrap: { width: 40, height: 40, borderRadius: 14, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', marginBottom: 7, borderWidth: 1, borderColor: colors.line },
+  contactMethodIconWrapActive: { backgroundColor: '#30342D', borderColor: '#454B40' },
+  contactMethodIcon: { color: colors.ink, fontSize: 19, fontWeight: '900' },
+  contactMethodIconActive: { color: colors.lime },
   contactMethodLabel: { color: colors.ink, fontSize: 10.5, fontWeight: '950' },
   contactMethodLabelActive: { color: colors.lime },
-  contactMethodDetail: { color: colors.muted, fontSize: 8.2, lineHeight: 12, marginTop: 4 },
+  contactMethodCheck: { position: 'absolute', top: 7, right: 7, width: 18, height: 18, borderRadius: 9, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
+  contactMethodCheckText: { color: colors.ink, fontSize: 9, fontWeight: '950' },
+  contactMethodHelp: { color: colors.muted, fontSize: 9, marginTop: -1, marginBottom: 2 },
   submitWrap: { marginTop: 18 },
 });
