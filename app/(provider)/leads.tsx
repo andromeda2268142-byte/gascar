@@ -21,6 +21,7 @@ type Lead = {
   service: string | null;
   service_location: 'shop' | 'mobile' | 'either';
   issue_description: string;
+  vehicle_label: string | null;
   preferred_time: string | null;
   zip: string | null;
   pickup_address: string | null;
@@ -139,7 +140,7 @@ export default function ProviderLeadsScreen() {
       const [leadsResult, walletResult] = await Promise.all([
         supabase
           .from('gascars_leads')
-          .select('id,service,service_location,issue_description,preferred_time,zip,pickup_address,destination_address,status,credit_cost,accepted_business_id,created_at')
+          .select('id,service,service_location,issue_description,vehicle_label,preferred_time,zip,pickup_address,destination_address,status,credit_cost,accepted_business_id,created_at')
           .order('created_at', { ascending: false })
           .limit(100),
         supabase
@@ -413,6 +414,16 @@ export default function ProviderLeadsScreen() {
                 </View>
               </View>
 
+              {lead.vehicle_label ? (
+                <View style={styles.vehicleCard}>
+                  <View style={styles.vehicleIconWrap}><Text style={styles.vehicleIcon}>🚘</Text></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.vehicleKicker}>VEHICLE</Text>
+                    <Text style={styles.vehicleName}>{lead.vehicle_label}</Text>
+                  </View>
+                </View>
+              ) : null}
+
               <Text style={styles.issue}>{lead.issue_description}</Text>
               {lead.preferred_time ? <Text style={styles.detail}>Preferred time: {lead.preferred_time}</Text> : null}
 
@@ -584,6 +595,11 @@ const styles = StyleSheet.create({
   statusActive: { backgroundColor: colors.limeSoft },
   statusCancelled: { backgroundColor: '#F4DDD7' },
   statusText: { color: colors.ink, fontSize: 7.5, fontWeight: '950' },
+  vehicleCard: { marginTop: 12, borderRadius: 15, backgroundColor: '#F4F2EC', borderWidth: 1, borderColor: colors.line, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  vehicleIconWrap: { width: 38, height: 38, borderRadius: 13, backgroundColor: colors.violetSoft, alignItems: 'center', justifyContent: 'center' },
+  vehicleIcon: { fontSize: 18 },
+  vehicleKicker: { color: colors.violet, fontSize: 7.5, fontWeight: '950', letterSpacing: 0.8 },
+  vehicleName: { color: colors.ink, fontSize: 12, fontWeight: '950', marginTop: 2 },
   issue: { color: colors.ink, fontSize: 11.5, lineHeight: 17, marginTop: 13 },
   detail: { color: colors.muted, fontSize: 9.5, marginTop: 6 },
   cancelledCard: { marginTop: 13, borderRadius: 14, backgroundColor: '#FFF1ED', borderWidth: 1, borderColor: '#F1B1A2', padding: 12 },
