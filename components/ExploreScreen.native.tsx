@@ -4,7 +4,6 @@ import {
   Linking,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -24,12 +23,6 @@ const DALLAS_REGION: Region = {
   longitudeDelta: 0.04,
 };
 
-const filters: Array<{ key: MapCategory; label: string; icon: string }> = [
-  { key: 'gas', label: 'Gasolina', icon: '⛽' },
-  { key: 'mechanic', label: 'Talleres', icon: '🔧' },
-  { key: 'towing', label: 'Grúas', icon: '🚚' },
-  { key: 'parts', label: 'Autopartes', icon: '⚙️' },
-];
 
 function money(value?: number) {
   return typeof value === 'number' ? '$' + value.toFixed(2) : '—';
@@ -166,7 +159,7 @@ export default function ExploreScreen() {
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Buscar gasolina, grúa, autopartes..."
+              placeholder="Search nearby gas stations..."
               placeholderTextColor="#8E9188"
               style={styles.searchInput}
               autoCorrect={false}
@@ -202,25 +195,6 @@ export default function ExploreScreen() {
           </Pressable>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
-        >
-          {filters.map((item) => {
-            const active = category === item.key;
-            return (
-              <Pressable
-                key={item.key}
-                onPress={() => selectCategory(item.key)}
-                style={[styles.filterPill, active && styles.filterPillActive]}
-              >
-                <Text style={styles.filterIcon}>{item.icon}</Text>
-                <Text style={[styles.filterText, active && styles.filterTextActive]}>{item.label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
       </SafeAreaView>
 
       <Pressable onPress={useMyLocation} style={[styles.locationButton, { bottom: selected ? 286 : 104 }]}>
@@ -340,27 +314,6 @@ const styles = StyleSheet.create({
   quickActionIcon: { fontSize: 17 },
   quickActionText: { color: colors.ink, fontSize: 9, fontWeight: '950', marginTop: 4, textAlign: 'center' },
   quickActionTextDark: { color: colors.white, fontSize: 9, fontWeight: '950', marginTop: 4, textAlign: 'center' },
-  filterRow: { paddingHorizontal: 14, paddingTop: 9, paddingBottom: 8, gap: 8 },
-  filterPill: {
-    minHeight: 42,
-    paddingHorizontal: 14,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255,253,248,0.96)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    borderWidth: 1,
-    borderColor: 'rgba(35,37,31,0.08)',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
-  filterPillActive: { backgroundColor: colors.ink, borderColor: colors.ink },
-  filterIcon: { fontSize: 14 },
-  filterText: { color: colors.ink, fontSize: 12, fontWeight: '900' },
-  filterTextActive: { color: colors.white },
 
   marker: {
     minWidth: 64,
