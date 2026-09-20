@@ -12,13 +12,24 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '@/constants/theme';
+import { getSupabaseClient } from '@/lib/supabase';
 import { loadOwnedProviderBusiness, providerTypeLabel, type ProviderBusiness } from '@/lib/provider';
 import { useAuth } from '@/providers/auth';
+
+type ProviderReview = {
+  id: string;
+  rating: number;
+  comment: string | null;
+  reviewer_name: string;
+  service_name: string | null;
+  created_at: string;
+};
 
 export default function ProviderAccountScreen() {
   const router = useRouter();
   const { user, signOut } = useAuth();
   const [business, setBusiness] = useState<ProviderBusiness | null>(null);
+  const [reviews, setReviews] = useState<ProviderReview[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -31,7 +42,19 @@ export default function ProviderAccountScreen() {
         router.replace('/business');
         return;
       }
+
       setBusiness(ownedBusiness);
+
+      const { data: reviewRows, error: reviewError } = await getSupabaseClient()
+        .from('gascars_reviews')
+        .select('id,rating,comment,reviewer_name,service_name,created_at')
+        .eq('business_id', ownedBusiness.id)
+        .eq('is_visible', true)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (reviewError) throw reviewError;
+      setReviews((reviewRows ?? []) as ProviderReview[]);
     } catch (error) {
       Alert.alert('Could not load business account', error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -42,6 +65,24 @@ export default function ProviderAccountScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!business) return;
+
+    const supabase = getSupabaseClient();
+    const channel = supabase
+      .channel('provider-reviews-' + business.id)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'gascars_reviews', filter: 'business_id=eq.' + business.id },
+        () => void load(),
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [business?.id, load]);
 
   async function logout() {
     await signOut();
@@ -59,6 +100,9 @@ export default function ProviderAccountScreen() {
   if (!business) return null;
 
   const active = business.status === 'active' && business.is_verified;
+  const averageRating = reviews.length
+    ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
+    : 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -90,6 +134,53 @@ export default function ProviderAccountScreen() {
           <InfoRow label="Business email" value={business.email || '—'} />
           <InfoRow label="Address" value={[business.address, business.city, business.state, business.zip].filter(Boolean).join(', ') || '—'} />
           <InfoRow label="Service ZIPs" value={(business.service_zips ?? []).join(', ') || business.zip || '—'} />
+        </View>
+
+        <View style={styles.reviewsCard}>
+          <View style={styles.reviewsHeader}>
+            <View>
+              <Text style={styles.reviewsKicker}>CUSTOMER REVIEWS</Text>
+              <View style={styles.ratingRow}>
+                <Text style={styles.ratingValue}>
+                  {reviews.length ? averageRating.toFixed(1) : '—'}
+                </Text>
+                <Text style={styles.ratingStar}>★</Text>
+              </View>
+              <Text style={styles.ratingCount}>
+                {reviews.length === 1 ? '1 completed-service review' : reviews.length + ' completed-service reviews'}
+              </Text>
+            </View>
+
+            <View style={styles.ratingBadge}>
+              <Text style={styles.ratingBadgeText}>
+                {reviews.length ? 'VERIFIED JOBS' : 'NO REVIEWS YET'}
+              </Text>
+            </View>
+          </View>
+
+          {reviews.length ? (
+            <View style={styles.reviewList}>
+              {reviews.slice(0, 4).map((review) => (
+                <View key={review.id} style={styles.reviewItem}>
+                  <View style={styles.reviewItemTop}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.reviewerName}>{review.reviewer_name}</Text>
+                      <Text style={styles.reviewService}>{review.service_name || 'Completed service'}</Text>
+                    </View>
+                    <Text style={styles.reviewStars}>
+                      {'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
+                    </Text>
+                  </View>
+                  {review.comment ? <Text style={styles.reviewComment}>{review.comment}</Text> : null}
+                  <Text style={styles.reviewDate}>{new Date(review.created_at).toLocaleDateString()}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.noReviewsText}>
+              Reviews will appear here after customers rate completed jobs.
+            </Text>
+          )}
         </View>
 
         <View style={styles.approvalCard}>
@@ -144,6 +235,24 @@ const styles = StyleSheet.create({
   infoRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#EFECE4' },
   infoLabel: { color: colors.muted, fontSize: 8.5, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
   infoValue: { color: colors.ink, fontSize: 11.5, fontWeight: '800', marginTop: 4 },
+  reviewsCard: { marginTop: 12, borderRadius: 21, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 15 },
+  reviewsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
+  reviewsKicker: { color: colors.coral, fontSize: 8, fontWeight: '950', letterSpacing: 1 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5 },
+  ratingValue: { color: colors.ink, fontSize: 30, lineHeight: 34, fontWeight: '950', letterSpacing: -1 },
+  ratingStar: { color: '#F5B63D', fontSize: 23 },
+  ratingCount: { color: colors.muted, fontSize: 8.5, marginTop: 2 },
+  ratingBadge: { borderRadius: 999, backgroundColor: colors.limeSoft, paddingHorizontal: 8, paddingVertical: 5 },
+  ratingBadgeText: { color: colors.ink, fontSize: 7, fontWeight: '950', letterSpacing: 0.5 },
+  reviewList: { marginTop: 14, gap: 8 },
+  reviewItem: { borderRadius: 15, backgroundColor: '#F7F5EF', borderWidth: 1, borderColor: '#ECE8DE', padding: 11 },
+  reviewItemTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  reviewerName: { color: colors.ink, fontSize: 10.5, fontWeight: '950' },
+  reviewService: { color: colors.muted, fontSize: 8.2, marginTop: 2 },
+  reviewStars: { color: '#F5B63D', fontSize: 12, letterSpacing: 1 },
+  reviewComment: { color: colors.ink, fontSize: 9.5, lineHeight: 14, marginTop: 8 },
+  reviewDate: { color: '#9B9E96', fontSize: 7.5, marginTop: 6 },
+  noReviewsText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 13 },
   approvalCard: { marginTop: 12, borderRadius: 18, backgroundColor: colors.limeSoft, borderWidth: 1, borderColor: '#D9EAB8', padding: 14 },
   approvalTitle: { color: colors.ink, fontSize: 12, fontWeight: '950' },
   approvalText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
