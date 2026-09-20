@@ -173,8 +173,32 @@ export default function ExploreScreen() {
               returnKeyType="search"
             />
           </View>
-          <Pressable style={styles.profileButton}>
+          <Pressable onPress={() => router.push('/(tabs)/profile')} style={styles.profileButton}>
             <Text style={styles.profileText}>GC</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.quickActions}>
+          <Pressable
+            onPress={() => selectCategory('gas')}
+            style={({ pressed }) => [styles.quickAction, pressed && { opacity: 0.84 }]}
+          >
+            <Text style={styles.quickActionIcon}>⛽</Text>
+            <Text style={styles.quickActionText}>Gas nearby</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push({ pathname: '/(tabs)/request', params: { category: 'repair' } })}
+            style={({ pressed }) => [styles.quickAction, styles.quickActionDark, pressed && { opacity: 0.84 }]}
+          >
+            <Text style={styles.quickActionIcon}>🔧</Text>
+            <Text style={styles.quickActionTextDark}>Mechanic</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push({ pathname: '/(tabs)/request', params: { category: 'towing' } })}
+            style={({ pressed }) => [styles.quickAction, styles.quickActionCoral, pressed && { opacity: 0.84 }]}
+          >
+            <Text style={styles.quickActionIcon}>🚚</Text>
+            <Text style={styles.quickActionTextDark}>Need a tow</Text>
           </Pressable>
         </View>
 
@@ -309,7 +333,14 @@ const styles = StyleSheet.create({
   },
   profileText: { color: colors.lime, fontSize: 13, fontWeight: '950' },
 
-  filterRow: { paddingHorizontal: 14, paddingTop: 11, paddingBottom: 8, gap: 8 },
+  quickActions: { flexDirection: 'row', gap: 7, paddingHorizontal: 14, paddingTop: 10 },
+  quickAction: { flex: 1, minHeight: 58, borderRadius: 17, backgroundColor: 'rgba(255,253,248,0.98)', borderWidth: 1, borderColor: 'rgba(35,37,31,0.08)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  quickActionDark: { backgroundColor: colors.ink, borderColor: colors.ink },
+  quickActionCoral: { backgroundColor: colors.coral, borderColor: colors.coral },
+  quickActionIcon: { fontSize: 17 },
+  quickActionText: { color: colors.ink, fontSize: 9, fontWeight: '950', marginTop: 4, textAlign: 'center' },
+  quickActionTextDark: { color: colors.white, fontSize: 9, fontWeight: '950', marginTop: 4, textAlign: 'center' },
+  filterRow: { paddingHorizontal: 14, paddingTop: 9, paddingBottom: 8, gap: 8 },
   filterPill: {
     minHeight: 42,
     paddingHorizontal: 14,
