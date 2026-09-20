@@ -344,15 +344,24 @@ export default function RequestScreen() {
   }
 
   const currentCase = useMemo(() => {
-    return myRequests.find(
+    const active = myRequests.find(
       (request) =>
         ['open', 'accepted', 'in_progress'].includes(request.status) &&
         !request.customer_archived_at,
+    );
+    if (active) return active;
+
+    return myRequests.find(
+      (request) =>
+        request.status === 'completed' &&
+        Boolean(request.accepted_business_id) &&
+        !reviewedLeadIds.includes(request.id),
     ) ?? null;
-  }, [myRequests]);
+  }, [myRequests, reviewedLeadIds]);
 
   const messageCase = useMemo(() => {
-    return currentCase ?? myRequests.find(
+    if (currentCase && ['accepted', 'in_progress'].includes(currentCase.status)) return currentCase;
+    return myRequests.find(
       (request) =>
         Boolean(request.accepted_business_id) &&
         ['accepted', 'in_progress'].includes(request.status),
@@ -412,12 +421,14 @@ export default function RequestScreen() {
 
       if (error) throw error;
 
+      setReviewComplete({
+        provider: pendingReview.provider_name || 'Your provider',
+        service: pendingReview.service || 'Service',
+      });
       setReviewedLeadIds((current) => [...new Set([...current, pendingReview.id])]);
       setDismissedReviewIds((current) => [...new Set([...current, pendingReview.id])]);
       setReviewRating(0);
       setReviewComment('');
-
-      Alert.alert('Thank you', 'Your review is now part of this provider’s profile.');
       await loadMyRequests();
     } catch (error) {
       Alert.alert(
@@ -592,7 +603,7 @@ export default function RequestScreen() {
         p_contact_phone: contactPhone,
         p_contact_email: contactEmail,
         p_preferred_contact_methods: preferredContacts,
-        p_vehicle_id: null,
+        p_vehicle_id: selectedVehicleId,
         p_preferred_time: 'As soon as possible',
         p_zip: zip,
         p_pickup_address: category === 'towing' ? pickup : null,
@@ -606,10 +617,17 @@ export default function RequestScreen() {
       void supabase.functions.invoke('gascars-email-worker').catch(() => undefined);
       await loadMyRequests();
 
-      Alert.alert(
-        'Request created',
-        'Only businesses that offer this service and support your selected service location can see this lead.',
-      );
+      setRequestSuccess({
+        service: selectedService.name,
+        vehicle: selectedVehicleLabel,
+        location: category === 'towing'
+          ? (pickup || zip)
+          : serviceLocation === 'shop'
+            ? 'At the shop'
+            : serviceLocation === 'mobile'
+              ? 'Provider comes to you'
+              : 'Either location works',
+      });
 
       setIssue('');
       setSelectedService(null);
