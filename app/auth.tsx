@@ -61,7 +61,8 @@ export default function AuthScreen() {
         if (error) throw error;
 
         if (!data.session) {
-          if (developmentTestMode) {
+          const { data: backendDevBypass } = await supabase.rpc('gascars_dev_signup_status');
+          if (developmentTestMode || backendDevBypass === true) {
             const { data: devSignInData, error: devSignInError } = await supabase.auth.signInWithPassword({
               email: email.trim().toLowerCase(),
               password,
