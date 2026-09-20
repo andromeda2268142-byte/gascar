@@ -37,7 +37,9 @@ type MyRequest = {
   service: string | null;
   status: string;
   accepted_business_id: string | null;
+  customer_archived_at: string | null;
   created_at: string;
+  updated_at: string;
   provider_name?: string | null;
 };
 
@@ -70,6 +72,7 @@ export default function RequestScreen() {
   const [myRequests, setMyRequests] = useState<MyRequest[]>([]);
   const [notifications, setNotifications] = useState<DriverNotification[]>([]);
   const [loadingMyRequests, setLoadingMyRequests] = useState(false);
+  const [caseArchiveWorking, setCaseArchiveWorking] = useState<string | null>(null);
   const [pickup, setPickup] = useState('');
   const [destination, setDestination] = useState('');
   const [working, setWorking] = useState(false);
@@ -93,7 +96,7 @@ export default function RequestScreen() {
       const [leadsResult, notificationsResult] = await Promise.all([
         supabase
           .from('gascars_leads')
-          .select('id,service,status,accepted_business_id,created_at')
+          .select('id,service,status,accepted_business_id,customer_archived_at,created_at,updated_at')
           .eq('customer_id', user.id)
           .order('created_at', { ascending: false })
           .limit(8),
@@ -223,19 +226,30 @@ export default function RequestScreen() {
   }
 
   const currentCase = useMemo(() => {
-    const active = myRequests.find((request) => ['open', 'accepted', 'in_progress'].includes(request.status));
-    return active ?? myRequests[0] ?? null;
+    return myRequests.find(
+      (request) =>
+        ['open', 'accepted', 'in_progress'].includes(request.status) &&
+        !request.customer_archived_at,
+    ) ?? null;
   }, [myRequests]);
 
-  const unreadMessagesForCurrentCase = useMemo(() => {
-    if (!currentCase) return 0;
+  const messageCase = useMemo(() => {
+    return currentCase ?? myRequests.find(
+      (request) =>
+        Boolean(request.accepted_business_id) &&
+        ['accepted', 'in_progress'].includes(request.status),
+    ) ?? null;
+  }, [currentCase, myRequests]);
+
+  const unreadMessagesForMessageCase = useMemo(() => {
+    if (!messageCase) return 0;
     return notifications.filter(
       (item) =>
         item.type === 'new_message' &&
-        item.lead_id === currentCase.id &&
+        item.lead_id === messageCase.id &&
         !item.read_at,
     ).length;
-  }, [currentCase, notifications]);
+  }, [messageCase, notifications]);
 
   const progressIndex = useMemo(() => {
     if (!currentCase) return 0;
@@ -244,6 +258,49 @@ export default function RequestScreen() {
     if (currentCase.status === 'accepted') return 1;
     return 0;
   }, [currentCase]);
+
+  async function setCaseArchived(request: MyRequest, archived: boolean) {
+    if (caseArchiveWorking) return;
+
+    if (archived) {
+      Alert.alert(
+        'Hide this service?',
+        'This only removes the progress card from your active view. It does not mark the job completed, cancel the mechanic, or delete the conversation. You can restore it from Recent services.',
+        [
+          { text: 'Keep showing', style: 'cancel' },
+          {
+            text: 'Hide from active view',
+            style: 'destructive',
+            onPress: () => void setCaseArchivedNow(request, true),
+          },
+        ],
+      );
+      return;
+    }
+
+    await setCaseArchivedNow(request, false);
+  }
+
+  async function setCaseArchivedNow(request: MyRequest, archived: boolean) {
+    setCaseArchiveWorking(request.id);
+    try {
+      const { error } = await getSupabaseClient().rpc('gascars_customer_set_case_archived', {
+        p_lead_id: request.id,
+        p_archived: archived,
+        p_reason: archived ? 'Customer hid active service from dashboard' : null,
+      });
+
+      if (error) throw error;
+      await loadMyRequests();
+    } catch (error) {
+      Alert.alert(
+        archived ? 'Could not hide service' : 'Could not restore service',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    } finally {
+      setCaseArchiveWorking(null);
+    }
+  }
 
   async function submit() {
     if (!user) {
@@ -464,10 +521,30 @@ export default function RequestScreen() {
                     : currentCase.status === 'accepted'
                       ? 'You can contact the provider from the floating message button.'
                       : currentCase.status === 'in_progress'
-                        ? 'The provider controls the work status. This card updates automatically as the case advances.'
+                        ? 'Only the provider can mark the work completed. If they forget, you can hide this card without changing the job record.'
                         : 'This service is finished. The case remains visible as the final record of progress.'}
                 </Text>
               </View>
+
+              {['accepted', 'in_progress'].includes(currentCase.status) ? (
+                <View style={styles.caseControls}>
+                  <Pressable
+                    disabled={caseArchiveWorking === currentCase.id}
+                    onPress={() => void setCaseArchived(currentCase, true)}
+                    style={({ pressed }) => [
+                      styles.hideCaseButton,
+                      (pressed || caseArchiveWorking === currentCase.id) && { opacity: 0.6 },
+                    ]}
+                  >
+                    <Text style={styles.hideCaseButtonText}>
+                      {caseArchiveWorking === currentCase.id ? 'Updating…' : 'Hide from current service'}
+                    </Text>
+                  </Pressable>
+                  <Text style={styles.hideCaseHelp}>
+                    This does not mark the repair completed.
+                  </Text>
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -479,13 +556,39 @@ export default function RequestScreen() {
                 .slice(0, 3)
                 .map((request) => (
                   <View key={request.id} style={styles.historyRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.historyService}>{request.service || 'Service request'}</Text>
-                      <Text style={styles.historyMeta}>
-                        {request.status.replaceAll('_', ' ')} · {new Date(request.created_at).toLocaleDateString()}
-                      </Text>
-                    </View>
-                    <Text style={styles.historyArrow}>›</Text>
+                    <Pressable
+                      disabled={!request.accepted_business_id}
+                      onPress={() => request.accepted_business_id
+                        ? router.push({ pathname: '/lead-chat', params: { leadId: request.id } })
+                        : undefined}
+                      style={styles.historyMain}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.historyService}>{request.service || 'Service request'}</Text>
+                        <Text style={styles.historyMeta}>
+                          {request.status.replaceAll('_', ' ')} · {new Date(request.created_at).toLocaleDateString()}
+                        </Text>
+                        {request.customer_archived_at ? (
+                          <Text style={styles.historyHidden}>Hidden from current service</Text>
+                        ) : null}
+                      </View>
+                      {request.accepted_business_id ? <Text style={styles.historyArrow}>›</Text> : null}
+                    </Pressable>
+
+                    {request.customer_archived_at && ['accepted', 'in_progress'].includes(request.status) ? (
+                      <Pressable
+                        disabled={caseArchiveWorking === request.id}
+                        onPress={() => void setCaseArchived(request, false)}
+                        style={({ pressed }) => [
+                          styles.restoreButton,
+                          (pressed || caseArchiveWorking === request.id) && { opacity: 0.6 },
+                        ]}
+                      >
+                        <Text style={styles.restoreButtonText}>
+                          {caseArchiveWorking === request.id ? '…' : 'Show again'}
+                        </Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                 ))}
             </View>
@@ -698,16 +801,16 @@ export default function RequestScreen() {
           </View>
         </ScrollView>
 
-        {user && currentCase?.accepted_business_id ? (
+        {user && messageCase?.accepted_business_id ? (
           <Pressable
-            onPress={() => router.push({ pathname: '/lead-chat', params: { leadId: currentCase.id } })}
+            onPress={() => router.push({ pathname: '/lead-chat', params: { leadId: messageCase.id } })}
             style={({ pressed }) => [styles.messageFab, pressed && { opacity: 0.86 }]}
           >
             <Text style={styles.messageFabIcon}>✉</Text>
-            {unreadMessagesForCurrentCase > 0 ? (
+            {unreadMessagesForMessageCase > 0 ? (
               <View style={styles.messageFabBadge}>
                 <Text style={styles.messageFabBadgeText}>
-                  {unreadMessagesForCurrentCase > 9 ? '9+' : unreadMessagesForCurrentCase}
+                  {unreadMessagesForMessageCase > 9 ? '9+' : unreadMessagesForMessageCase}
                 </Text>
               </View>
             ) : null}
@@ -761,12 +864,20 @@ const styles = StyleSheet.create({
   caseNowLabel: { color: colors.coral, fontSize: 7.5, fontWeight: '950', letterSpacing: 0.8 },
   caseNowTitle: { color: colors.ink, fontSize: 12.5, lineHeight: 17, fontWeight: '950', marginTop: 4 },
   caseNowText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 4 },
+  caseControls: { marginTop: 12, alignItems: 'center' },
+  hideCaseButton: { minHeight: 42, borderRadius: 13, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAF9F5', paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch' },
+  hideCaseButtonText: { color: colors.ink, fontSize: 9.5, fontWeight: '900' },
+  hideCaseHelp: { color: colors.muted, fontSize: 8.5, marginTop: 6 },
   historyWrap: { marginBottom: 20 },
   historyTitle: { color: colors.ink, fontSize: 14, fontWeight: '950', marginBottom: 8 },
-  historyRow: { minHeight: 58, borderRadius: 15, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
+  historyRow: { minHeight: 58, borderRadius: 15, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  historyMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 },
   historyService: { color: colors.ink, fontSize: 11, fontWeight: '900' },
   historyMeta: { color: colors.muted, fontSize: 8.5, marginTop: 3, textTransform: 'capitalize' },
+  historyHidden: { color: colors.coral, fontSize: 8, fontWeight: '900', marginTop: 3 },
   historyArrow: { color: '#A3A59E', fontSize: 22 },
+  restoreButton: { minHeight: 34, borderRadius: 11, backgroundColor: colors.ink, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  restoreButtonText: { color: colors.lime, fontSize: 8.5, fontWeight: '950' },
   messageFab: { position: 'absolute', right: 20, bottom: 92, width: 58, height: 58, borderRadius: 29, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 7 },
   messageFabIcon: { color: colors.lime, fontSize: 21, fontWeight: '950' },
   messageFabBadge: { position: 'absolute', right: -2, top: -3, minWidth: 20, height: 20, borderRadius: 10, backgroundColor: colors.coral, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.background },
