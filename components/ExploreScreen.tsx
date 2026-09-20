@@ -67,6 +67,33 @@ export default function ExploreScreen() {
           />
         </View>
 
+        <View style={styles.quickActions}>
+          <Pressable
+            onPress={() => {
+              setCategory('gas');
+              setSelected(null);
+            }}
+            style={styles.quickAction}
+          >
+            <Text style={styles.quickActionIcon}>⛽</Text>
+            <View><Text style={styles.quickActionTitle}>Gas nearby</Text><Text style={styles.quickActionMeta}>Compare nearby prices</Text></View>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push({ pathname: '/(tabs)/request', params: { category: 'repair' } })}
+            style={[styles.quickAction, styles.quickActionDark]}
+          >
+            <Text style={styles.quickActionIcon}>🔧</Text>
+            <View><Text style={styles.quickActionTitleDark}>Request mechanic</Text><Text style={styles.quickActionMetaDark}>Matched service providers</Text></View>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push({ pathname: '/(tabs)/request', params: { category: 'towing' } })}
+            style={[styles.quickAction, styles.quickActionCoral]}
+          >
+            <Text style={styles.quickActionIcon}>🚚</Text>
+            <View><Text style={styles.quickActionTitleDark}>Need towing</Text><Text style={styles.quickActionMetaDark}>Pickup and destination</Text></View>
+          </Pressable>
+        </View>
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
           {filters.map((item) => {
             const active = category === item.key;
@@ -158,6 +185,15 @@ const styles = StyleSheet.create({
   searchBox: { marginTop: 20, minHeight: 52, borderRadius: 16, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14 },
   searchIcon: { color: colors.ink, fontSize: 21, marginRight: 8 },
   searchInput: { flex: 1, minHeight: 50, color: colors.ink, fontSize: 13, fontWeight: '700' },
+  quickActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 11 },
+  quickAction: { flex: 1, minWidth: 190, minHeight: 78, borderRadius: 19, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  quickActionDark: { backgroundColor: colors.ink, borderColor: colors.ink },
+  quickActionCoral: { backgroundColor: colors.coral, borderColor: colors.coral },
+  quickActionIcon: { fontSize: 23 },
+  quickActionTitle: { color: colors.ink, fontSize: 12, fontWeight: '950' },
+  quickActionTitleDark: { color: colors.white, fontSize: 12, fontWeight: '950' },
+  quickActionMeta: { color: colors.muted, fontSize: 8.5, marginTop: 3 },
+  quickActionMetaDark: { color: '#ECEDE7', fontSize: 8.5, marginTop: 3 },
   filters: { gap: 8, paddingVertical: 14 },
   filter: { minHeight: 40, borderRadius: 13, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 13, flexDirection: 'row', gap: 7, alignItems: 'center' },
   filterActive: { backgroundColor: colors.ink, borderColor: colors.ink },
