@@ -1,9 +1,11 @@
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, PrimaryButton, SectionTitle } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/providers/auth';
+import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 
 const rows = [
   ['♥', 'Saved places', 'Favorites and preferred providers'],
@@ -21,6 +23,28 @@ function initials(email?: string) {
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, loading, configured, signOut } = useAuth();
+  const [role, setRole] = useState<'driver' | 'business' | 'admin' | null>(null);
+
+  useEffect(() => {
+    if (!user || !isSupabaseConfigured) {
+      setRole(null);
+      return;
+    }
+
+    let active = true;
+    getSupabaseClient()
+      .from('gascars_profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        if (active) setRole((data?.role as 'driver' | 'business' | 'admin' | undefined) ?? null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -63,7 +87,16 @@ export default function ProfileScreen() {
           ))}
         </Card>
 
-        {user ? (
+        {user && role === 'admin' ? (
+          <Pressable onPress={() => router.push('/admin')} style={styles.adminPortal}>
+            <View style={styles.adminPortalIcon}><Text style={styles.adminPortalIconText}>A</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.businessPortalTitle}>Admin Portal</Text>
+              <Text style={styles.businessPortalText}>Businesses, users, services, leads, support and platform controls.</Text>
+            </View>
+            <Text style={[styles.chevron, { color: colors.lime }]}>›</Text>
+          </Pressable>
+        ) : user ? (
           <Pressable onPress={() => router.push('/business')} style={styles.businessPortal}>
             <View style={styles.businessPortalIcon}><Text style={styles.businessPortalIconText}>B</Text></View>
             <View style={{ flex: 1 }}>
@@ -104,6 +137,9 @@ const styles = StyleSheet.create({
   rowTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
   rowMeta: { color: colors.muted, fontSize: 10, marginTop: 3 },
   chevron: { color: '#A3A59E', fontSize: 25 },
+  adminPortal: { marginTop: 16, minHeight: 78, borderRadius: 18, backgroundColor: '#11130F', padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: '#3B4035' },
+  adminPortalIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
+  adminPortalIconText: { color: colors.ink, fontSize: 14, fontWeight: '950' },
   businessPortal: { marginTop: 16, minHeight: 78, borderRadius: 18, backgroundColor: colors.ink, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
   businessPortalIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
   businessPortalIconText: { color: colors.ink, fontSize: 14, fontWeight: '950' },

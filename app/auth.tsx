@@ -58,11 +58,22 @@ export default function AuthScreen() {
           return;
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data: signInData, error } = await supabase.auth.signInWithPassword({
           email: email.trim().toLowerCase(),
           password,
         });
         if (error) throw error;
+
+        const { data: profile } = await supabase
+          .from('gascars_profiles')
+          .select('role')
+          .eq('id', signInData.user.id)
+          .single();
+
+        if (profile?.role === 'admin') {
+          router.replace('/admin');
+          return;
+        }
       }
 
       router.replace('/(tabs)/profile');
