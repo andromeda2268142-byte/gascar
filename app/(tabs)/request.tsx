@@ -1193,8 +1193,7 @@ export default function RequestScreen() {
                 <Text style={styles.successButtonText}>View live status</Text>
               </Pressable>
             </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
+          </View>
         </Modal>
 
         <Modal
@@ -1327,7 +1326,8 @@ export default function RequestScreen() {
                 </>
               )}
             </View>
-          </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </Modal>
 
       </KeyboardAvoidingView>
