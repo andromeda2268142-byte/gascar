@@ -11,7 +11,9 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { AddressSearchField } from '@/components/AddressSearchField';
 import { Card, PrimaryButton, SectionTitle } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
@@ -24,10 +26,10 @@ import {
 } from '@/lib/services';
 import { useAuth } from '@/providers/auth';
 
-const locationChoices: Array<{ value: ServiceLocation; title: string; subtitle: string }> = [
-  { value: 'shop', title: "I'll go to the shop", subtitle: 'Only match shops that service vehicles at their location.' },
-  { value: 'mobile', title: 'Come to me', subtitle: 'Only match mobile mechanics that can come to your location.' },
-  { value: 'either', title: 'Either works', subtitle: 'Match shops or mobile mechanics that offer this service.' },
+const locationChoices: Array<{ value: ServiceLocation; title: string }> = [
+  { value: 'shop', title: "I'll go to the shop" },
+  { value: 'mobile', title: 'Come to me' },
+  { value: 'either', title: 'Either works' },
 ];
 
 type ContactMethod = 'app' | 'phone' | 'email';
@@ -75,6 +77,9 @@ export default function RequestScreen() {
   const [caseArchiveWorking, setCaseArchiveWorking] = useState<string | null>(null);
   const [pickup, setPickup] = useState('');
   const [destination, setDestination] = useState('');
+  const [pickupLatitude, setPickupLatitude] = useState<number | null>(null);
+  const [pickupLongitude, setPickupLongitude] = useState<number | null>(null);
+  const [currentLocationLoading, setCurrentLocationLoading] = useState(false);
   const [working, setWorking] = useState(false);
   const [loadingServices, setLoadingServices] = useState(false);
   const [errors, setErrors] = useState<{
@@ -82,6 +87,7 @@ export default function RequestScreen() {
     location?: string;
     issue?: string;
     contact?: string;
+    towing?: string;
   }>({});
 
   const loadMyRequests = useCallback(async () => {
@@ -209,7 +215,7 @@ export default function RequestScreen() {
   const searchResults = useMemo(
     () => filterServices(categoryServices, serviceQuery)
       .filter((item) => !item.slug.startsWith('other-'))
-      .slice(0, 10),
+      .slice(0, 5),
     [categoryServices, serviceQuery],
   );
 
@@ -311,6 +317,54 @@ export default function RequestScreen() {
     }
   }
 
+  async function useCurrentPickupLocation() {
+    if (currentLocationLoading) return;
+
+    setCurrentLocationLoading(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert(
+          'Location permission needed',
+          "Allow Gas Car's to use your location so we can set the towing pickup point.",
+        );
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      const latitude = position.coords.latitude;
+      const longitude = position.coords.longitude;
+      setPickupLatitude(latitude);
+      setPickupLongitude(longitude);
+
+      const addresses = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const address = addresses[0];
+
+      if (address) {
+        const parts = [
+          [address.streetNumber, address.street].filter(Boolean).join(' '),
+          address.city,
+          address.region,
+          address.postalCode,
+        ].filter(Boolean);
+
+        setPickup(parts.join(', '));
+        if (address.postalCode) setZip(address.postalCode);
+      } else {
+        setPickup(latitude.toFixed(6) + ', ' + longitude.toFixed(6));
+      }
+
+      setErrors((current) => ({ ...current, towing: undefined }));
+    } catch {
+      Alert.alert('Could not get your location', 'You can still search or type the pickup address.');
+    } finally {
+      setCurrentLocationLoading(false);
+    }
+  }
+
   async function submit() {
     if (!user) {
       router.push('/auth');
@@ -337,6 +391,10 @@ export default function RequestScreen() {
 
     if (issue.trim().length < 5) {
       nextErrors.issue = 'Describe the problem in at least a few words.';
+    }
+
+    if (category === 'towing' && (!pickup.trim() || !destination.trim())) {
+      nextErrors.towing = 'Choose a pickup and destination address.';
     }
 
     if (!preferredContacts.length) {
@@ -376,8 +434,8 @@ export default function RequestScreen() {
         p_zip: zip,
         p_pickup_address: category === 'towing' ? pickup : null,
         p_destination_address: category === 'towing' ? destination : null,
-        p_latitude: null,
-        p_longitude: null,
+        p_latitude: category === 'towing' ? pickupLatitude : null,
+        p_longitude: category === 'towing' ? pickupLongitude : null,
       });
 
       if (error) throw error;
@@ -397,6 +455,8 @@ export default function RequestScreen() {
       if (category === 'towing') {
         setPickup('');
         setDestination('');
+        setPickupLatitude(null);
+        setPickupLongitude(null);
       }
     } catch (error) {
       Alert.alert('Could not create request', error instanceof Error ? error.message : 'Please try again.');
@@ -576,7 +636,6 @@ export default function RequestScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.selectedLabel}>SELECTED SERVICE</Text>
                   <Text style={styles.selectedName}>{selectedService.name}</Text>
-                  {selectedService.description ? <Text style={styles.selectedDescription}>{selectedService.description}</Text> : null}
                 </View>
                 <Pressable
                   hitSlop={8}
@@ -588,55 +647,26 @@ export default function RequestScreen() {
                   <Text style={styles.selectedChange}>Change</Text>
                 </Pressable>
               </View>
-            ) : (
-              <>
-                {serviceQuery.trim().length >= 2 ? (
-                  <View style={styles.results}>
-                    {searchResults.length ? (
-                      searchResults.map((item) => (
-                        <Pressable key={item.id} onPress={() => chooseService(item)} style={styles.resultRow}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.resultName}>{item.name}</Text>
-                            <Text style={styles.resultMeta}>
-                              {(item.group_name || 'Service') + (item.description ? ' · ' + item.description : '')}
-                            </Text>
-                          </View>
-                          <Text style={styles.resultArrow}>›</Text>
-                        </Pressable>
-                      ))
-                    ) : (
-                      <View style={styles.noResults}>
-                        <Text style={styles.noResultsTitle}>No close match yet</Text>
-                        <Text style={styles.noResultsText}>Keep typing or choose Other below. Small spelling mistakes are okay.</Text>
-                      </View>
-                    )}
-                  </View>
-                ) : (
-                  <View style={styles.searchHint}>
-                    <Text style={styles.searchHintTitle}>Start typing the problem</Text>
-                    <Text style={styles.searchHintText}>Examples: brake noise, overheating, battery, vibration, window, AC, transmission…</Text>
-                  </View>
-                )}
+            ) : serviceQuery.trim().length >= 2 ? (
+              <View style={styles.results}>
+                {searchResults.map((item) => (
+                  <Pressable key={item.id} onPress={() => chooseService(item)} style={styles.resultRow}>
+                    <Text style={styles.resultName}>{item.name}</Text>
+                    <Text style={styles.resultArrow}>›</Text>
+                  </Pressable>
+                ))}
 
                 {otherService ? (
                   <Pressable
                     onPress={() => chooseService(otherService)}
-                    style={styles.otherServiceButton}
+                    style={[styles.resultRow, styles.otherResultRow]}
                   >
-                    <View style={styles.otherServiceIcon}><Text style={styles.otherServiceIconText}>?</Text></View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.otherServiceTitle}>
-                        {category === 'repair' ? "Other / I'm not sure what's wrong" : 'Other roadside problem'}
-                      </Text>
-                      <Text style={styles.otherServiceText}>
-                        Describe what you notice and we’ll route it to providers that accept general diagnosis.
-                      </Text>
-                    </View>
+                    <Text style={styles.resultName}>Other</Text>
                     <Text style={styles.resultArrow}>›</Text>
                   </Pressable>
                 ) : null}
-              </>
-            )}
+              </View>
+            ) : null}
           </Card>
           {errors.service ? <Text style={styles.fieldError}>{errors.service}</Text> : null}
 
@@ -660,10 +690,7 @@ export default function RequestScreen() {
                     <View style={[styles.radio, active && styles.radioActive]}>
                       {active ? <View style={styles.radioDot} /> : null}
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.locationTitle, active && styles.locationTitleActive]}>{choice.title}</Text>
-                      <Text style={styles.locationSubtitle}>{choice.subtitle}</Text>
-                    </View>
+                    <Text style={[styles.locationTitle, active && styles.locationTitleActive]}>{choice.title}</Text>
                   </Pressable>
                 );
               })}
@@ -671,7 +698,6 @@ export default function RequestScreen() {
           ) : (
             <Card style={styles.roadsideLocation}>
               <Text style={styles.roadsideTitle}>📍 Provider comes to the vehicle</Text>
-              <Text style={styles.roadsideText}>Roadside and towing requests are matched only to providers that support mobile service.</Text>
             </Card>
           )}
           {errors.location ? <Text style={styles.fieldError}>{errors.location}</Text> : null}
@@ -706,12 +732,48 @@ export default function RequestScreen() {
             />
 
             {category === 'towing' ? (
-              <>
-                <Text style={styles.label}>Pickup</Text>
-                <TextInput value={pickup} onChangeText={setPickup} placeholder="Current location or address" placeholderTextColor="#A1A39C" style={styles.input} />
-                <Text style={styles.label}>Destination</Text>
-                <TextInput value={destination} onChangeText={setDestination} placeholder="Where should the vehicle go?" placeholderTextColor="#A1A39C" style={styles.input} />
-              </>
+              <View style={styles.towingAddressGroup}>
+                <AddressSearchField
+                  label="Pickup"
+                  value={pickup}
+                  placeholder="Search pickup address"
+                  onChangeText={(value) => {
+                    setPickup(value);
+                    setPickupLatitude(null);
+                    setPickupLongitude(null);
+                    setErrors((current) => ({ ...current, towing: undefined }));
+                  }}
+                  onSelect={(place) => {
+                    setPickup(place.formattedAddress);
+                    setPickupLatitude(place.latitude);
+                    setPickupLongitude(place.longitude);
+                    if (place.postalCode) setZip(place.postalCode);
+                    setErrors((current) => ({ ...current, towing: undefined }));
+                  }}
+                  onUseCurrentLocation={() => void useCurrentPickupLocation()}
+                  currentLocationLoading={currentLocationLoading}
+                  latitudeBias={pickupLatitude}
+                  longitudeBias={pickupLongitude}
+                />
+
+                <AddressSearchField
+                  label="Destination"
+                  value={destination}
+                  placeholder="Search destination address"
+                  onChangeText={(value) => {
+                    setDestination(value);
+                    setErrors((current) => ({ ...current, towing: undefined }));
+                  }}
+                  onSelect={(place) => {
+                    setDestination(place.formattedAddress);
+                    setErrors((current) => ({ ...current, towing: undefined }));
+                  }}
+                  latitudeBias={pickupLatitude}
+                  longitudeBias={pickupLongitude}
+                />
+
+                {errors.towing ? <Text style={styles.fieldErrorInside}>{errors.towing}</Text> : null}
+              </View>
             ) : null}
           </Card>
 
@@ -874,38 +936,25 @@ const styles = StyleSheet.create({
   results: { marginTop: 8 },
   resultRow: { minHeight: 66, flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 5, borderBottomWidth: 1, borderBottomColor: colors.line },
   resultName: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  resultMeta: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 3 },
   resultArrow: { color: '#A3A59E', fontSize: 25, marginLeft: 8 },
   selectedService: { marginTop: 10, padding: 14, borderRadius: 17, backgroundColor: colors.coralSoft, flexDirection: 'row', alignItems: 'center', gap: 10 },
   selectedLabel: { color: colors.coral, fontSize: 8.5, fontWeight: '950', letterSpacing: 0.8 },
   selectedName: { color: colors.ink, fontSize: 15, fontWeight: '950', marginTop: 3 },
-  selectedDescription: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
   selectedChange: { color: colors.coral, fontSize: 9.5, fontWeight: '950' },
-  noResults: { paddingVertical: 15, paddingHorizontal: 5 },
-  noResultsTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
-  noResultsText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
-  searchHint: { paddingVertical: 16, paddingHorizontal: 5 },
-  searchHintTitle: { color: colors.ink, fontSize: 11.5, fontWeight: '900' },
-  searchHintText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 4 },
-  otherServiceButton: { marginTop: 8, minHeight: 70, borderRadius: 16, backgroundColor: '#F2F0E9', borderWidth: 1, borderColor: colors.line, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  otherServiceIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
-  otherServiceIconText: { color: colors.lime, fontSize: 15, fontWeight: '950' },
-  otherServiceTitle: { color: colors.ink, fontSize: 10.5, fontWeight: '950' },
-  otherServiceText: { color: colors.muted, fontSize: 8.8, lineHeight: 13, marginTop: 3 },
+  otherResultRow: { backgroundColor: '#F3F1EA', borderBottomWidth: 0, marginTop: 2, borderRadius: 12, paddingHorizontal: 10 },
   sectionGap: { marginTop: 21 },
   locationList: { gap: 9 },
-  locationChoice: { minHeight: 76, borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 13, flexDirection: 'row', gap: 12, alignItems: 'center' },
+  locationChoice: { minHeight: 58, borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', gap: 12, alignItems: 'center' },
   locationChoiceActive: { borderColor: colors.coral, backgroundColor: '#FFF7F3' },
   radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#B8B9B3', alignItems: 'center', justifyContent: 'center' },
   radioActive: { borderColor: colors.coral },
   radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.coral },
   locationTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
   locationTitleActive: { color: colors.coral },
-  locationSubtitle: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 3 },
   roadsideLocation: { backgroundColor: colors.mintSoft },
   roadsideTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  roadsideText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
   formCard: { gap: 9 },
+  towingAddressGroup: { gap: 12, marginTop: 3 },
   label: { color: colors.ink, fontSize: 11, fontWeight: '900', marginTop: 3 },
   input: { minHeight: 50, borderRadius: 15, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAF9F5', paddingHorizontal: 14, color: colors.ink, fontSize: 13 },
   textarea: { minHeight: 104, paddingTop: 13, paddingBottom: 13 },
