@@ -722,12 +722,49 @@ export default function AdminScreen() {
     </View>
   );
 
+  const supportView = (
+    <View style={styles.listGap}>
+      {tickets.length === 0 ? (
+        <View style={styles.empty}><Text style={styles.emptyTitle}>No support tickets</Text><Text style={styles.emptyText}>Open customer and provider issues will appear here.</Text></View>
+      ) : tickets.map((ticket) => (
+        <View key={ticket.id} style={styles.rowCard}>
+          <View style={styles.rowTitleLine}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{ticket.subject}</Text>
+              <Text style={styles.rowMeta}>Opened {formatDate(ticket.created_at)} · User {ticket.user_id.slice(0,8)}</Text>
+            </View>
+            <Status value={ticket.status} />
+          </View>
+          <View style={styles.actions}>
+            <SmallButton
+              label="Open"
+              active={ticket.status === 'open'}
+              disabled={workingId === ticket.id}
+              onPress={() => void runAction(ticket.id, () => getSupabaseClient().rpc('gascars_admin_set_ticket_status', { p_ticket_id: ticket.id, p_status: 'open' }))}
+            />
+            <SmallButton
+              label="Resolve"
+              active={ticket.status === 'resolved'}
+              disabled={workingId === ticket.id}
+              onPress={() => void runAction(ticket.id, () => getSupabaseClient().rpc('gascars_admin_set_ticket_status', { p_ticket_id: ticket.id, p_status: 'resolved' }))}
+            />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+
+
   const financeView = (
     <View style={styles.listGap}>
       <View style={styles.rowCard}>
         <Text style={styles.rowTitle}>Credit system</Text>
-        <Text style={styles.rowMeta}>Outstanding credits: {dashboard?.credits_outstanding ?? 0} · Purchases recorded: {purchases.length}</Text>
-        <Text style={styles.bodyText}>Development grants and test purchases use the same wallet ledger that production Stripe purchases will use.</Text>
+        <Text style={styles.rowMeta}>
+          Outstanding credits: {dashboard?.credits_outstanding ?? 0} · Purchases recorded: {purchases.length}
+        </Text>
+        <Text style={styles.bodyText}>
+          Development grants and test purchases use the same wallet ledger that production Stripe purchases will use.
+        </Text>
       </View>
 
       {businesses.map((business) => {
@@ -763,39 +800,8 @@ export default function AdminScreen() {
             <View style={styles.rowTitleLine}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.rowTitle}>{business?.name || 'Provider purchase'}</Text>
-                <Text style={styles.rowMeta}>{purchase.provider} · {'
-      {tickets.length === 0 ? (
-        <View style={styles.empty}><Text style={styles.emptyTitle}>No support tickets</Text><Text style={styles.emptyText}>Open customer and provider issues will appear here.</Text></View>
-      ) : tickets.map((ticket) => (
-        <View key={ticket.id} style={styles.rowCard}>
-          <View style={styles.rowTitleLine}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>{ticket.subject}</Text>
-              <Text style={styles.rowMeta}>Opened {formatDate(ticket.created_at)} · User {ticket.user_id.slice(0,8)}</Text>
-            </View>
-            <Status value={ticket.status} />
-          </View>
-          <View style={styles.actions}>
-            <SmallButton
-              label="Open"
-              active={ticket.status === 'open'}
-              disabled={workingId === ticket.id}
-              onPress={() => void runAction(ticket.id, () => getSupabaseClient().rpc('gascars_admin_set_ticket_status', { p_ticket_id: ticket.id, p_status: 'open' }))}
-            />
-            <SmallButton
-              label="Resolve"
-              active={ticket.status === 'resolved'}
-              disabled={workingId === ticket.id}
-              onPress={() => void runAction(ticket.id, () => getSupabaseClient().rpc('gascars_admin_set_ticket_status', { p_ticket_id: ticket.id, p_status: 'resolved' }))}
-            />
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-
-  const body =
-    section === 'overview' ? overview :
+                <Text style={styles.rowMeta}>
+                  {purchase.provider} · {'
     section === 'businesses' ? businessesView :
     section === 'services' ? servicesView :
     section === 'users' ? usersView :
@@ -973,7 +979,8 @@ const styles = StyleSheet.create({
   mobileFooter: { marginTop: 28, paddingTop: 18, borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   mobileLogout: { color: colors.coral, fontSize: 10.5, fontWeight: '900' },
 });
- + (purchase.amount_cents / 100).toFixed(2)} · {formatDate(purchase.created_at)}</Text>
+ + (purchase.amount_cents / 100).toFixed(2)} · {formatDate(purchase.created_at)}
+                </Text>
               </View>
               <Status value={purchase.status} />
             </View>
@@ -989,7 +996,9 @@ const styles = StyleSheet.create({
       {auditEntries.length ? auditEntries.map((entry) => (
         <View key={entry.id} style={styles.rowCard}>
           <Text style={styles.rowTitle}>{entry.action}</Text>
-          <Text style={styles.rowMeta}>{formatDate(entry.created_at)} · Actor {entry.actor_id?.slice(0, 8) || 'system'}</Text>
+          <Text style={styles.rowMeta}>
+            {formatDate(entry.created_at)} · Actor {entry.actor_id?.slice(0, 8) || 'system'}
+          </Text>
           <Text style={styles.auditDetail}>{JSON.stringify(entry.detail)}</Text>
         </View>
       )) : (
@@ -998,38 +1007,6 @@ const styles = StyleSheet.create({
           <Text style={styles.emptyText}>Administrative and privileged provider actions will appear here.</Text>
         </View>
       )}
-    </View>
-  );
-
-  const supportView = (
-    <View style={styles.listGap}>
-      {tickets.length === 0 ? (
-        <View style={styles.empty}><Text style={styles.emptyTitle}>No support tickets</Text><Text style={styles.emptyText}>Open customer and provider issues will appear here.</Text></View>
-      ) : tickets.map((ticket) => (
-        <View key={ticket.id} style={styles.rowCard}>
-          <View style={styles.rowTitleLine}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>{ticket.subject}</Text>
-              <Text style={styles.rowMeta}>Opened {formatDate(ticket.created_at)} · User {ticket.user_id.slice(0,8)}</Text>
-            </View>
-            <Status value={ticket.status} />
-          </View>
-          <View style={styles.actions}>
-            <SmallButton
-              label="Open"
-              active={ticket.status === 'open'}
-              disabled={workingId === ticket.id}
-              onPress={() => void runAction(ticket.id, () => getSupabaseClient().rpc('gascars_admin_set_ticket_status', { p_ticket_id: ticket.id, p_status: 'open' }))}
-            />
-            <SmallButton
-              label="Resolve"
-              active={ticket.status === 'resolved'}
-              disabled={workingId === ticket.id}
-              onPress={() => void runAction(ticket.id, () => getSupabaseClient().rpc('gascars_admin_set_ticket_status', { p_ticket_id: ticket.id, p_status: 'resolved' }))}
-            />
-          </View>
-        </View>
-      ))}
     </View>
   );
 
