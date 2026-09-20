@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '@/constants/theme';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
@@ -20,9 +20,10 @@ type Mode = 'signin' | 'signup';
 
 export default function AuthScreen() {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>('signin');
+  const params = useLocalSearchParams<{ email?: string; mode?: Mode; verified?: string }>();
+  const [mode, setMode] = useState<Mode>(params.mode === 'signup' ? 'signup' : 'signin');
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(params.email ?? '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [working, setWorking] = useState(false);
@@ -98,6 +99,13 @@ export default function AuthScreen() {
               ? 'Sign in to save vehicles, request help and keep your activity in one place.'
               : 'Start as a driver. Business access can be added to the same account later.'}
           </Text>
+
+          {params.verified === '1' ? (
+            <View style={styles.verifiedNotice}>
+              <Text style={styles.verifiedTitle}>Email confirmed</Text>
+              <Text style={styles.verifiedText}>Sign in with the password you created to continue.</Text>
+            </View>
+          ) : null}
 
           {!isSupabaseConfigured ? (
             <View style={styles.setupNotice}>
@@ -202,6 +210,9 @@ const styles = StyleSheet.create({
   kicker: { marginTop: 20, color: colors.coral, fontSize: 11, fontWeight: '950', letterSpacing: 1.6 },
   title: { marginTop: 6, color: colors.ink, fontSize: 35, lineHeight: 38, fontWeight: '950', letterSpacing: -1.4 },
   subtitle: { marginTop: 9, color: colors.muted, fontSize: 13, lineHeight: 20, maxWidth: 420 },
+  verifiedNotice: { marginTop: 18, backgroundColor: colors.limeSoft, borderWidth: 1, borderColor: '#D7E9B1', borderRadius: 17, padding: 13 },
+  verifiedTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  verifiedText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
   setupNotice: { marginTop: 18, backgroundColor: colors.sunSoft, borderWidth: 1, borderColor: '#EBD99C', borderRadius: 17, padding: 13 },
   setupTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
   setupText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
