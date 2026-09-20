@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -41,6 +40,12 @@ type Contact = {
 };
 
 type Filter = 'available' | 'active' | 'completed';
+type Notice = {
+  kind: 'error' | 'success' | 'info';
+  title: string;
+  text: string;
+  action?: 'credits';
+};
 
 function makeRequestId() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
@@ -48,6 +53,57 @@ function makeRequestId() {
     const value = char === 'x' ? random : (random & 0x3) | 0x8;
     return value.toString(16);
   });
+}
+
+function friendlyLeadError(message: string) {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('not enough credits')) {
+    return {
+      kind: 'error' as const,
+      title: 'Not enough credits',
+      text: 'Add credits before accepting this lead. Your balance updates automatically after a successful credit purchase.',
+      action: 'credits' as const,
+    };
+  }
+
+  if (normalized.includes('no longer available')) {
+    return {
+      kind: 'info' as const,
+      title: 'Lead already taken or expired',
+      text: 'This lead is no longer available. The list has been refreshed.',
+    };
+  }
+
+  if (normalized.includes('approved')) {
+    return {
+      kind: 'error' as const,
+      title: 'Provider approval required',
+      text: 'Your provider account must be active and verified before accepting leads.',
+    };
+  }
+
+  if (normalized.includes('service area')) {
+    return {
+      kind: 'error' as const,
+      title: 'Outside your service area',
+      text: 'This request no longer matches the ZIP coverage configured for your business.',
+    };
+  }
+
+  if (normalized.includes('services or service mode')) {
+    return {
+      kind: 'error' as const,
+      title: 'Service no longer matches',
+      text: 'Review your Services tab. This lead does not match your current service or Shop/Mobile settings.',
+    };
+  }
+
+  return {
+    kind: 'error' as const,
+    title: 'Could not accept lead',
+    text: message || 'Please refresh and try again.',
+  };
 }
 
 export default function ProviderLeadsScreen() {
@@ -60,11 +116,13 @@ export default function ProviderLeadsScreen() {
   const [filter, setFilter] = useState<Filter>('available');
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [liveStatus, setLiveStatus] = useState<'connecting' | 'live' | 'offline'>('connecting');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!user) return;
 
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const ownedBusiness = await loadOwnedProviderBusiness(user.id);
       if (!ownedBusiness) {
@@ -114,15 +172,60 @@ export default function ProviderLeadsScreen() {
         setContacts({});
       }
     } catch (error) {
-      Alert.alert('Could not load leads', error instanceof Error ? error.message : 'Please try again.');
+      if (!silent) {
+        setNotice({
+          kind: 'error',
+          title: 'Could not load leads',
+          text: error instanceof Error ? error.message : 'Please try again.',
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [router, user]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!business) return;
+
+    const supabase = getSupabaseClient();
+    setLiveStatus('connecting');
+
+    const channel = supabase
+      .channel('provider-live-' + business.id)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'gascars_leads' },
+        () => void load(true),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'gascars_wallets', filter: 'business_id=eq.' + business.id },
+        () => void load(true),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'gascars_businesses', filter: 'id=eq.' + business.id },
+        () => void load(true),
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') setLiveStatus('live');
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') setLiveStatus('offline');
+        else setLiveStatus('connecting');
+      });
+
+    const fallback = setInterval(() => {
+      void load(true);
+    }, 15000);
+
+    return () => {
+      clearInterval(fallback);
+      void supabase.removeChannel(channel);
+    };
+  }, [business?.id, load]);
 
   const visibleLeads = useMemo(() => {
     if (filter === 'available') return leads.filter((lead) => lead.status === 'open');
@@ -133,45 +236,68 @@ export default function ProviderLeadsScreen() {
   async function acceptLead(lead: Lead) {
     if (!business) return;
 
-    Alert.alert(
-      'Accept this lead?',
-      `This will use ${lead.credit_cost} credits. Your current balance is ${credits}.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Accept lead',
-          onPress: async () => {
-            setWorkingId(lead.id);
-            try {
-              const { error } = await getSupabaseClient().rpc('gascars_provider_accept_lead', {
-                p_lead_id: lead.id,
-                p_request_id: makeRequestId(),
-              });
-              if (error) throw error;
-              setFilter('active');
-              await load();
-            } catch (error) {
-              Alert.alert('Could not accept lead', error instanceof Error ? error.message : 'Please try again.');
-            } finally {
-              setWorkingId(null);
-            }
-          },
-        },
-      ],
-    );
+    if (credits < lead.credit_cost) {
+      setNotice({
+        kind: 'error',
+        title: 'Not enough credits',
+        text: 'This lead costs ' + lead.credit_cost + ' credits and your balance is ' + credits + '. Add credits to continue.',
+        action: 'credits',
+      });
+      return;
+    }
+
+    setWorkingId(lead.id);
+    setNotice(null);
+
+    try {
+      const { error } = await getSupabaseClient().rpc('gascars_provider_accept_lead', {
+        p_lead_id: lead.id,
+        p_request_id: makeRequestId(),
+      });
+
+      if (error) throw error;
+
+      setFilter('active');
+      setNotice({
+        kind: 'success',
+        title: 'Lead accepted',
+        text: 'Customer contact details are now unlocked for your business.',
+      });
+      await load(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      setNotice(friendlyLeadError(message));
+      await load(true);
+    } finally {
+      setWorkingId(null);
+    }
   }
 
   async function setLeadStatus(lead: Lead, status: 'in_progress' | 'completed') {
     setWorkingId(lead.id);
+    setNotice(null);
+
     try {
       const { error } = await getSupabaseClient().rpc('gascars_provider_set_lead_status', {
         p_lead_id: lead.id,
         p_status: status,
       });
       if (error) throw error;
-      await load();
+
+      setNotice({
+        kind: 'success',
+        title: status === 'in_progress' ? 'Job started' : 'Job completed',
+        text: status === 'in_progress'
+          ? 'This lead moved to Active jobs.'
+          : 'This job moved to Completed.',
+      });
+      await load(true);
     } catch (error) {
-      Alert.alert('Could not update job', error instanceof Error ? error.message : 'Please try again.');
+      setNotice({
+        kind: 'error',
+        title: 'Could not update job',
+        text: error instanceof Error ? error.message : 'Please try again.',
+      });
     } finally {
       setWorkingId(null);
     }
@@ -193,20 +319,47 @@ export default function ProviderLeadsScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} />}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <View>
-            <Text style={styles.kicker}>PROVIDER LEADS</Text>
+          <View style={{ flex: 1 }}>
+            <View style={styles.liveRow}>
+              <Text style={styles.kicker}>PROVIDER LEADS</Text>
+              <View style={[styles.livePill, liveStatus === 'live' ? styles.livePillOn : styles.livePillOff]}>
+                <View style={[styles.liveDot, liveStatus === 'live' ? styles.liveDotOn : styles.liveDotOff]} />
+                <Text style={styles.liveText}>{liveStatus === 'live' ? 'LIVE' : liveStatus === 'connecting' ? 'CONNECTING' : 'SYNCING'}</Text>
+              </View>
+            </View>
             <Text style={styles.title}>Matched work.</Text>
-            <Text style={styles.subtitle}>Only leads compatible with your services, work mode and service ZIPs appear here.</Text>
+            <Text style={styles.subtitle}>New compatible leads and credit changes update automatically. A 15-second fallback refresh runs if realtime is interrupted.</Text>
           </View>
-          <View style={styles.creditPill}>
+          <Pressable onPress={() => router.push('/(provider)/credits')} style={styles.creditPill}>
             <Text style={styles.creditValue}>{credits}</Text>
             <Text style={styles.creditLabel}>credits</Text>
-          </View>
+          </Pressable>
         </View>
+
+        {notice ? (
+          <View style={[
+            styles.notice,
+            notice.kind === 'error' ? styles.noticeError : notice.kind === 'success' ? styles.noticeSuccess : styles.noticeInfo,
+          ]}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.noticeTitle}>{notice.title}</Text>
+              <Text style={styles.noticeText}>{notice.text}</Text>
+            </View>
+            {notice.action === 'credits' ? (
+              <Pressable onPress={() => router.push('/(provider)/credits')} style={styles.noticeButton}>
+                <Text style={styles.noticeButtonText}>Add credits</Text>
+              </Pressable>
+            ) : (
+              <Pressable onPress={() => setNotice(null)} hitSlop={8}>
+                <Text style={styles.noticeClose}>×</Text>
+              </Pressable>
+            )}
+          </View>
+        ) : null}
 
         {!activeBusiness ? (
           <View style={styles.pendingCard}>
@@ -230,6 +383,8 @@ export default function ProviderLeadsScreen() {
         {visibleLeads.length ? visibleLeads.map((lead) => {
           const contact = contacts[lead.id];
           const acceptedByThisBusiness = lead.accepted_business_id === business.id;
+          const canAfford = credits >= lead.credit_cost;
+
           return (
             <View key={lead.id} style={styles.leadCard}>
               <View style={styles.leadTop}>
@@ -264,10 +419,21 @@ export default function ProviderLeadsScreen() {
               {lead.status === 'open' && activeBusiness ? (
                 <Pressable
                   disabled={workingId === lead.id}
-                  onPress={() => void acceptLead(lead)}
-                  style={({ pressed }) => [styles.primaryButton, (pressed || workingId === lead.id) && { opacity: 0.7 }]}
+                  onPress={() => canAfford ? void acceptLead(lead) : router.push('/(provider)/credits')}
+                  style={({ pressed }) => [
+                    canAfford ? styles.primaryButton : styles.creditButton,
+                    (pressed || workingId === lead.id) && { opacity: 0.7 },
+                  ]}
                 >
-                  {workingId === lead.id ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryButtonText}>Accept lead · {lead.credit_cost} credits</Text>}
+                  {workingId === lead.id ? (
+                    <ActivityIndicator color={colors.white} />
+                  ) : (
+                    <Text style={canAfford ? styles.primaryButtonText : styles.creditButtonText}>
+                      {canAfford
+                        ? 'Accept lead · ' + lead.credit_cost + ' credits'
+                        : 'Add credits · need ' + (lead.credit_cost - credits) + ' more'}
+                    </Text>
+                  )}
                 </Pressable>
               ) : null}
 
@@ -299,7 +465,7 @@ export default function ProviderLeadsScreen() {
             </Text>
             <Text style={styles.emptyText}>
               {activeBusiness
-                ? 'Lead visibility changes automatically as customer requests match your business settings.'
+                ? 'Lead visibility updates automatically as customer requests match your services, work mode and ZIP.'
                 : 'Finish your services and wait for admin approval.'}
             </Text>
           </View>
@@ -312,14 +478,31 @@ export default function ProviderLeadsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: 18, paddingBottom: 120 },
+  content: { width: '100%', maxWidth: 1180, alignSelf: 'center', padding: 18, paddingBottom: 120 },
   header: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', justifyContent: 'space-between' },
+  liveRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   kicker: { color: colors.coral, fontSize: 10, fontWeight: '950', letterSpacing: 1.5 },
+  livePill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
+  livePillOn: { backgroundColor: colors.limeSoft },
+  livePillOff: { backgroundColor: '#EEECE5' },
+  liveDot: { width: 6, height: 6, borderRadius: 3 },
+  liveDotOn: { backgroundColor: '#5B9A2D' },
+  liveDotOff: { backgroundColor: '#9B9D96' },
+  liveText: { color: colors.ink, fontSize: 7.5, fontWeight: '950', letterSpacing: 0.5 },
   title: { color: colors.ink, fontSize: 30, lineHeight: 33, fontWeight: '950', letterSpacing: -1.1, marginTop: 5 },
-  subtitle: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 6, maxWidth: 285 },
-  creditPill: { minWidth: 70, borderRadius: 17, backgroundColor: colors.limeSoft, paddingHorizontal: 12, paddingVertical: 9, alignItems: 'center' },
+  subtitle: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 6, maxWidth: 520 },
+  creditPill: { minWidth: 76, borderRadius: 17, backgroundColor: colors.limeSoft, paddingHorizontal: 12, paddingVertical: 9, alignItems: 'center' },
   creditValue: { color: colors.ink, fontSize: 18, fontWeight: '950' },
   creditLabel: { color: colors.muted, fontSize: 8, marginTop: 1 },
+  notice: { marginTop: 15, borderRadius: 17, borderWidth: 1, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  noticeError: { backgroundColor: '#FFF0EC', borderColor: '#F0B6A8' },
+  noticeSuccess: { backgroundColor: colors.limeSoft, borderColor: '#D5E8AE' },
+  noticeInfo: { backgroundColor: colors.violetSoft, borderColor: '#D8CFF7' },
+  noticeTitle: { color: colors.ink, fontSize: 11.5, fontWeight: '950' },
+  noticeText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  noticeButton: { minHeight: 36, borderRadius: 11, backgroundColor: colors.ink, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
+  noticeButtonText: { color: colors.lime, fontSize: 9, fontWeight: '950' },
+  noticeClose: { color: colors.muted, fontSize: 22, lineHeight: 24 },
   pendingCard: { marginTop: 16, borderRadius: 17, backgroundColor: colors.sunSoft, borderWidth: 1, borderColor: '#E9D793', padding: 13 },
   pendingTitle: { color: colors.ink, fontSize: 12, fontWeight: '950' },
   pendingText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 3 },
@@ -347,6 +530,8 @@ const styles = StyleSheet.create({
   contactLine: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
   primaryButton: { minHeight: 48, borderRadius: 15, backgroundColor: colors.coral, alignItems: 'center', justifyContent: 'center', marginTop: 13, paddingHorizontal: 12 },
   primaryButtonText: { color: colors.white, fontSize: 11.5, fontWeight: '950' },
+  creditButton: { minHeight: 48, borderRadius: 15, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', marginTop: 13, paddingHorizontal: 12 },
+  creditButtonText: { color: colors.lime, fontSize: 11.5, fontWeight: '950' },
   completeButton: { minHeight: 48, borderRadius: 15, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', marginTop: 13 },
   completeButtonText: { color: colors.lime, fontSize: 11.5, fontWeight: '950' },
   emptyCard: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 19, padding: 18 },
