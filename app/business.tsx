@@ -50,7 +50,13 @@ export default function BusinessScreen() {
   const { user } = useAuth();
   const [business, setBusiness] = useState<Business | null>(null);
   const [businessName, setBusinessName] = useState('');
-  const [businessType, setBusinessType] = useState<'mechanic' | 'towing'>('mechanic');
+  const [businessType, setBusinessType] = useState<'mechanic' | 'towing' | 'parts'>('mechanic');
+  const [businessPhone, setBusinessPhone] = useState('');
+  const [businessEmail, setBusinessEmail] = useState(user?.email ?? '');
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [businessCity, setBusinessCity] = useState('');
+  const [businessState, setBusinessState] = useState('');
+  const [businessZip, setBusinessZip] = useState('');
   const [catalog, setCatalog] = useState<ServiceCatalogItem[]>([]);
   const [offerings, setOfferings] = useState<Record<string, BusinessServiceMode>>({});
   const [serviceSearch, setServiceSearch] = useState('');
@@ -81,6 +87,13 @@ export default function BusinessScreen() {
       setBusiness(nextBusiness);
 
       if (!nextBusiness) {
+        setCatalog([]);
+        setOfferings({});
+        setLeads([]);
+        return;
+      }
+
+      if (nextBusiness.business_type === 'parts') {
         setCatalog([]);
         setOfferings({});
         setLeads([]);
@@ -142,17 +155,28 @@ export default function BusinessScreen() {
       return;
     }
 
+    if (!businessPhone.trim()) {
+      Alert.alert('Business phone required', 'Add a phone number customers and Gas Car’s can use for this business.');
+      return;
+    }
+
+    if (!businessZip.trim()) {
+      Alert.alert('ZIP code required', 'Add the primary ZIP code for this business.');
+      return;
+    }
+
     try {
       setLoading(true);
-      const { error } = await getSupabaseClient()
-        .from('gascars_businesses')
-        .insert({
-          owner_id: user.id,
-          business_type: businessType,
-          name: businessName.trim(),
-          status: 'pending',
-          is_verified: false,
-        });
+      const { error } = await getSupabaseClient().rpc('gascars_create_business_profile', {
+        p_business_type: businessType,
+        p_name: businessName.trim(),
+        p_phone: businessPhone.trim(),
+        p_email: businessEmail.trim() || null,
+        p_address: businessAddress.trim() || null,
+        p_city: businessCity.trim() || null,
+        p_state: businessState.trim() || null,
+        p_zip: businessZip.trim(),
+      });
 
       if (error) throw error;
       await loadBusinessData();
@@ -260,7 +284,7 @@ export default function BusinessScreen() {
           <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Back</Text></Pressable>
           <Text style={styles.kicker}>BUSINESS PORTAL</Text>
           <Text style={styles.title}>Set up your business.</Text>
-          <Text style={styles.subtitle}>Tell Gas Car’s what kind of provider you are. Service selection comes next.</Text>
+          <Text style={styles.subtitle}>Complete the provider profile. It will remain pending until an administrator approves the business.</Text>
 
           <Card style={styles.setupCard}>
             <Text style={styles.label}>Business name</Text>
@@ -274,9 +298,42 @@ export default function BusinessScreen() {
               <Pressable onPress={() => setBusinessType('towing')} style={[styles.typeButton, businessType === 'towing' && styles.typeButtonActive]}>
                 <Text style={[styles.typeText, businessType === 'towing' && styles.typeTextActive]}>🚚 Towing</Text>
               </Pressable>
+              <Pressable onPress={() => setBusinessType('parts')} style={[styles.typeButton, businessType === 'parts' && styles.typeButtonActive]}>
+                <Text style={[styles.typeText, businessType === 'parts' && styles.typeTextActive]}>⚙ Parts</Text>
+              </Pressable>
             </View>
 
-            <PrimaryButton label="Create business profile" accent onPress={createBusiness} />
+            <Text style={styles.label}>Business phone</Text>
+            <TextInput value={businessPhone} onChangeText={setBusinessPhone} placeholder="(555) 555-5555" placeholderTextColor="#A1A39C" style={styles.input} keyboardType="phone-pad" />
+
+            <Text style={styles.label}>Business email</Text>
+            <TextInput value={businessEmail} onChangeText={setBusinessEmail} placeholder="service@business.com" placeholderTextColor="#A1A39C" style={styles.input} keyboardType="email-address" autoCapitalize="none" />
+
+            <Text style={styles.label}>Street address</Text>
+            <TextInput value={businessAddress} onChangeText={setBusinessAddress} placeholder="123 Main St" placeholderTextColor="#A1A39C" style={styles.input} />
+
+            <View style={styles.cityStateRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>City</Text>
+                <TextInput value={businessCity} onChangeText={setBusinessCity} placeholder="Dallas" placeholderTextColor="#A1A39C" style={styles.input} />
+              </View>
+              <View style={styles.stateField}>
+                <Text style={styles.label}>State</Text>
+                <TextInput value={businessState} onChangeText={setBusinessState} placeholder="TX" placeholderTextColor="#A1A39C" style={styles.input} autoCapitalize="characters" maxLength={2} />
+              </View>
+            </View>
+
+            <Text style={styles.label}>Primary ZIP code</Text>
+            <TextInput value={businessZip} onChangeText={setBusinessZip} placeholder="75201" placeholderTextColor="#A1A39C" style={styles.input} keyboardType="number-pad" />
+
+            <View style={styles.pendingSetupNote}>
+              <Text style={styles.pendingSetupTitle}>What happens next?</Text>
+              <Text style={styles.pendingSetupText}>
+                After this profile is created, mechanics and towing companies select the exact services they offer and whether each service is Shop, Mobile or Both. The business stays Pending until admin approval.
+              </Text>
+            </View>
+
+            <PrimaryButton label="Continue to services" accent onPress={createBusiness} />
           </Card>
         </ScrollView>
       </SafeAreaView>
@@ -308,6 +365,13 @@ export default function BusinessScreen() {
           </View>
         ) : null}
 
+        {business.business_type === 'parts' ? (
+          <Card style={styles.partsCard}>
+            <Text style={styles.partsTitle}>Auto parts business profile created</Text>
+            <Text style={styles.partsText}>Your store is pending approval. Inventory and parts-specific marketplace controls will live here as that workflow is connected.</Text>
+          </Card>
+        ) : (
+          <>
         <SectionTitle title="Services I offer" right={String(Object.keys(offerings).length) + ' selected'} />
         <Card style={styles.servicesCard}>
           <View style={styles.searchWrap}>
@@ -378,6 +442,8 @@ export default function BusinessScreen() {
             <Text style={styles.emptyLeadText}>Only leads that match your selected services and service mode will appear here.</Text>
           </Card>
         )}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -403,7 +469,15 @@ const styles = StyleSheet.create({
   setupCard: { marginTop: 22, gap: 12 },
   label: { color: colors.ink, fontSize: 11, fontWeight: '900' },
   input: { height: 52, borderRadius: 15, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAF9F5', paddingHorizontal: 14, color: colors.ink, fontSize: 13 },
-  typeRow: { flexDirection: 'row', gap: 8 },
+  typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  cityStateRow: { flexDirection: 'row', gap: 8 },
+  stateField: { width: 86 },
+  pendingSetupNote: { backgroundColor: colors.sunSoft, borderWidth: 1, borderColor: '#E9D793', borderRadius: 15, padding: 12, marginVertical: 3 },
+  pendingSetupTitle: { color: colors.ink, fontSize: 10.5, fontWeight: '900' },
+  pendingSetupText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  partsCard: { backgroundColor: colors.violetSoft, borderColor: '#DDD4FA', marginTop: 4 },
+  partsTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
+  partsText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
   typeButton: { flex: 1, minHeight: 48, borderRadius: 15, backgroundColor: '#F1EFE8', alignItems: 'center', justifyContent: 'center' },
   typeButtonActive: { backgroundColor: colors.ink },
   typeText: { color: colors.ink, fontSize: 11, fontWeight: '900' },
