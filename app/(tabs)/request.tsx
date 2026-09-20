@@ -74,7 +74,7 @@ export default function RequestScreen() {
   const [myRequests, setMyRequests] = useState<MyRequest[]>([]);
   const [notifications, setNotifications] = useState<DriverNotification[]>([]);
   const [loadingMyRequests, setLoadingMyRequests] = useState(false);
-  const [caseArchiveWorking, setCaseArchiveWorking] = useState<string | null>(null);
+  const [cancelWorkingId, setCancelWorkingId] = useState<string | null>(null);
   const [pickup, setPickup] = useState('');
   const [destination, setDestination] = useState('');
   const [pickupLatitude, setPickupLatitude] = useState<number | null>(null);
@@ -274,46 +274,54 @@ export default function RequestScreen() {
     return 0;
   }, [currentCase]);
 
-  async function setCaseArchived(request: MyRequest, archived: boolean) {
-    if (caseArchiveWorking) return;
+  function cancelService(request: MyRequest) {
+    if (cancelWorkingId) return;
 
-    if (archived) {
-      Alert.alert(
-        'Hide this service?',
-        'This only removes the progress card from your active view. It does not mark the job completed, cancel the mechanic, or delete the conversation. You can restore it from My Account → Service history.',
-        [
-          { text: 'Keep showing', style: 'cancel' },
-          {
-            text: 'Hide from active view',
-            style: 'destructive',
-            onPress: () => void setCaseArchivedNow(request, true),
-          },
-        ],
-      );
-      return;
-    }
+    const started = request.status === 'in_progress';
 
-    await setCaseArchivedNow(request, false);
+    Alert.alert(
+      'Cancel this service?',
+      started
+        ? 'The provider has already started this job. Cancelling removes it from your active service view and marks it cancelled for the provider. This cannot be undone.'
+        : 'This request will be cancelled and removed from your active service view. If a provider already accepted it, they will see it as cancelled.',
+      [
+        { text: 'Keep service', style: 'cancel' },
+        {
+          text: 'Cancel service',
+          style: 'destructive',
+          onPress: () => void cancelServiceNow(request),
+        },
+      ],
+    );
   }
 
-  async function setCaseArchivedNow(request: MyRequest, archived: boolean) {
-    setCaseArchiveWorking(request.id);
+  async function cancelServiceNow(request: MyRequest) {
+    setCancelWorkingId(request.id);
+
     try {
-      const { error } = await getSupabaseClient().rpc('gascars_customer_set_case_archived', {
+      const { data, error } = await getSupabaseClient().rpc('gascars_customer_cancel_lead', {
         p_lead_id: request.id,
-        p_archived: archived,
-        p_reason: archived ? 'Customer hid active service from dashboard' : null,
+        p_reason: 'Cancelled by customer',
       });
 
       if (error) throw error;
+
+      const result = data as { refunded_credits?: number } | null;
       await loadMyRequests();
+
+      Alert.alert(
+        'Service cancelled',
+        (result?.refunded_credits ?? 0) > 0
+          ? 'The request was cancelled and the provider was notified.'
+          : 'The request was cancelled.',
+      );
     } catch (error) {
       Alert.alert(
-        archived ? 'Could not hide service' : 'Could not restore service',
+        'Could not cancel service',
         error instanceof Error ? error.message : 'Please try again.',
       );
     } finally {
-      setCaseArchiveWorking(null);
+      setCancelWorkingId(null);
     }
   }
 
@@ -575,28 +583,25 @@ export default function RequestScreen() {
                     : currentCase.status === 'accepted'
                       ? 'You can contact the provider from the floating message button.'
                       : currentCase.status === 'in_progress'
-                        ? 'Only the provider can mark the work completed. If they forget, you can hide this card without changing the job record.'
-                        : 'This service is finished. The case remains visible as the final record of progress.'}
+                        ? 'Only the provider can mark the work completed.'
+                        : 'This service is finished.'}
                 </Text>
               </View>
 
-              {['accepted', 'in_progress'].includes(currentCase.status) ? (
+              {['open', 'accepted', 'in_progress'].includes(currentCase.status) ? (
                 <View style={styles.caseControls}>
                   <Pressable
-                    disabled={caseArchiveWorking === currentCase.id}
-                    onPress={() => void setCaseArchived(currentCase, true)}
+                    disabled={cancelWorkingId === currentCase.id}
+                    onPress={() => cancelService(currentCase)}
                     style={({ pressed }) => [
-                      styles.hideCaseButton,
-                      (pressed || caseArchiveWorking === currentCase.id) && { opacity: 0.6 },
+                      styles.cancelServiceButton,
+                      (pressed || cancelWorkingId === currentCase.id) && { opacity: 0.6 },
                     ]}
                   >
-                    <Text style={styles.hideCaseButtonText}>
-                      {caseArchiveWorking === currentCase.id ? 'Updating…' : 'Hide from current service'}
+                    <Text style={styles.cancelServiceButtonText}>
+                      {cancelWorkingId === currentCase.id ? 'Cancelling…' : 'Cancel service'}
                     </Text>
                   </Pressable>
-                  <Text style={styles.hideCaseHelp}>
-                    This does not mark the repair completed.
-                  </Text>
                 </View>
               ) : null}
             </View>
@@ -920,10 +925,9 @@ const styles = StyleSheet.create({
   caseNowLabel: { color: colors.coral, fontSize: 7.5, fontWeight: '950', letterSpacing: 0.8 },
   caseNowTitle: { color: colors.ink, fontSize: 12.5, lineHeight: 17, fontWeight: '950', marginTop: 4 },
   caseNowText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 4 },
-  caseControls: { marginTop: 12, alignItems: 'center' },
-  hideCaseButton: { minHeight: 42, borderRadius: 13, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAF9F5', paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch' },
-  hideCaseButtonText: { color: colors.ink, fontSize: 9.5, fontWeight: '900' },
-  hideCaseHelp: { color: colors.muted, fontSize: 8.5, marginTop: 6 },
+  caseControls: { marginTop: 12 },
+  cancelServiceButton: { minHeight: 44, borderRadius: 13, borderWidth: 1, borderColor: '#F1B1A2', backgroundColor: '#FFF2EE', paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  cancelServiceButtonText: { color: '#C44F35', fontSize: 10, fontWeight: '950' },
   messageFab: { position: 'absolute', right: 20, bottom: 92, width: 58, height: 58, borderRadius: 29, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 7 },
   messageFabIcon: { color: colors.lime, fontSize: 21, fontWeight: '950' },
   messageFabBadge: { position: 'absolute', right: -2, top: -3, minWidth: 20, height: 20, borderRadius: 10, backgroundColor: colors.coral, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.background },
