@@ -48,6 +48,12 @@ export default function RequestScreen() {
   const [destination, setDestination] = useState('');
   const [working, setWorking] = useState(false);
   const [loadingServices, setLoadingServices] = useState(false);
+  const [errors, setErrors] = useState<{
+    service?: string;
+    location?: string;
+    issue?: string;
+    contact?: string;
+  }>({});
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -91,11 +97,13 @@ export default function RequestScreen() {
     setSelectedService(null);
     setServiceQuery('');
     setServiceLocation(next === 'towing' ? 'mobile' : null);
+    setErrors({});
   }
 
   function chooseService(item: ServiceCatalogItem) {
     setSelectedService(item);
     setServiceQuery(item.name);
+    setErrors((current) => ({ ...current, service: undefined }));
   }
 
   async function submit() {
@@ -112,25 +120,30 @@ export default function RequestScreen() {
       return;
     }
 
+    const nextErrors: typeof errors = {};
+
     if (!selectedService) {
-      Alert.alert('Choose a service', 'Select the specific service you need so the request reaches the right provider.');
-      return;
+      nextErrors.service = 'Choose the exact service you need.';
     }
 
     if (!serviceLocation) {
-      Alert.alert('Choose where service should happen', 'Tell us whether you will go to a shop or need a mobile mechanic.');
-      return;
+      nextErrors.location = 'Choose where the service should happen.';
     }
 
     if (issue.trim().length < 5) {
-      Alert.alert('Tell us what is happening', 'Add a short description so the provider understands the problem.');
-      return;
+      nextErrors.issue = 'Describe the problem in at least a few words.';
     }
 
     if (!contactPhone.trim() && !contactEmail.trim()) {
-      Alert.alert('Contact information required', 'Add a phone number or email so an unlocked provider can contact you.');
+      nextErrors.contact = 'Add a phone number or email so the provider can contact you.';
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
       return;
     }
+
+    setErrors({});
 
     setWorking(true);
 
@@ -229,6 +242,7 @@ export default function RequestScreen() {
                 onChangeText={(value) => {
                   setServiceQuery(value);
                   if (selectedService && value !== selectedService.name) setSelectedService(null);
+                  setErrors((current) => ({ ...current, service: undefined }));
                 }}
                 placeholder={category === 'repair' ? 'Search brakes, AC, battery...' : 'Search tow, jump start, flat tire...'}
                 placeholderTextColor="#A1A39C"
@@ -280,6 +294,7 @@ export default function RequestScreen() {
               </View>
             )}
           </Card>
+          {errors.service ? <Text style={styles.fieldError}>{errors.service}</Text> : null}
 
           <View style={styles.sectionGap}>
             <SectionTitle title={category === 'repair' ? 'Where should the service happen?' : 'Service location'} />
@@ -292,7 +307,10 @@ export default function RequestScreen() {
                 return (
                   <Pressable
                     key={choice.value}
-                    onPress={() => setServiceLocation(choice.value)}
+                    onPress={() => {
+                      setServiceLocation(choice.value);
+                      setErrors((current) => ({ ...current, location: undefined }));
+                    }}
                     style={[styles.locationChoice, active && styles.locationChoiceActive]}
                   >
                     <View style={[styles.radio, active && styles.radioActive]}>
@@ -312,19 +330,26 @@ export default function RequestScreen() {
               <Text style={styles.roadsideText}>Roadside and towing requests are matched only to providers that support mobile service.</Text>
             </Card>
           )}
+          {errors.location ? <Text style={styles.fieldError}>{errors.location}</Text> : null}
 
           <View style={styles.sectionGap}><SectionTitle title="Request details" /></View>
           <Card style={styles.formCard}>
             <Text style={styles.label}>What is happening?</Text>
             <TextInput
               value={issue}
-              onChangeText={setIssue}
+              onChangeText={(value) => {
+                setIssue(value);
+                if (value.trim().length >= 5) {
+                  setErrors((current) => ({ ...current, issue: undefined }));
+                }
+              }}
               placeholder="Example: grinding noise when braking at low speed..."
               placeholderTextColor="#A1A39C"
-              style={[styles.input, styles.textarea]}
+              style={[styles.input, styles.textarea, errors.issue && styles.inputError]}
               multiline
               textAlignVertical="top"
             />
+            {errors.issue ? <Text style={styles.fieldErrorInside}>{errors.issue}</Text> : null}
 
             <Text style={styles.label}>ZIP code</Text>
             <TextInput
@@ -352,9 +377,35 @@ export default function RequestScreen() {
             <Text style={styles.label}>Name</Text>
             <TextInput value={contactName} onChangeText={setContactName} placeholder="Your name" placeholderTextColor="#A1A39C" style={styles.input} />
             <Text style={styles.label}>Phone</Text>
-            <TextInput value={contactPhone} onChangeText={setContactPhone} placeholder="(555) 555-5555" placeholderTextColor="#A1A39C" style={styles.input} keyboardType="phone-pad" />
+            <TextInput
+              value={contactPhone}
+              onChangeText={(value) => {
+                setContactPhone(value);
+                if (value.trim() || contactEmail.trim()) {
+                  setErrors((current) => ({ ...current, contact: undefined }));
+                }
+              }}
+              placeholder="(555) 555-5555"
+              placeholderTextColor="#A1A39C"
+              style={styles.input}
+              keyboardType="phone-pad"
+            />
             <Text style={styles.label}>Email</Text>
-            <TextInput value={contactEmail} onChangeText={setContactEmail} placeholder="you@example.com" placeholderTextColor="#A1A39C" style={styles.input} keyboardType="email-address" autoCapitalize="none" />
+            <TextInput
+              value={contactEmail}
+              onChangeText={(value) => {
+                setContactEmail(value);
+                if (value.trim() || contactPhone.trim()) {
+                  setErrors((current) => ({ ...current, contact: undefined }));
+                }
+              }}
+              placeholder="you@example.com"
+              placeholderTextColor="#A1A39C"
+              style={styles.input}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            {errors.contact ? <Text style={styles.fieldErrorInside}>{errors.contact}</Text> : null}
           </Card>
 
           <View style={styles.submitWrap}>
@@ -421,6 +472,9 @@ const styles = StyleSheet.create({
   label: { color: colors.ink, fontSize: 11, fontWeight: '900', marginTop: 3 },
   input: { minHeight: 50, borderRadius: 15, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAF9F5', paddingHorizontal: 14, color: colors.ink, fontSize: 13 },
   textarea: { minHeight: 104, paddingTop: 13, paddingBottom: 13 },
+  inputError: { borderColor: colors.coral, borderWidth: 1.5 },
+  fieldError: { color: colors.coral, fontSize: 10.5, fontWeight: '800', marginTop: 7, marginLeft: 4 },
+  fieldErrorInside: { color: colors.coral, fontSize: 10, fontWeight: '800', marginTop: -2, marginBottom: 3 },
   privacyNote: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginBottom: 2 },
   submitWrap: { marginTop: 18 },
 });
