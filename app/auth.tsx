@@ -1,5 +1,16 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '@/constants/theme';
@@ -13,6 +24,7 @@ export default function AuthScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [working, setWorking] = useState(false);
 
   async function submit() {
@@ -60,66 +72,127 @@ export default function AuthScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backText}>‹ Back</Text>
-        </Pressable>
+      <KeyboardAvoidingView
+        style={styles.keyboardArea}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          automaticallyAdjustKeyboardInsets
+          showsVerticalScrollIndicator={false}
+        >
+          <Pressable onPress={() => router.back()} style={styles.backButton}>
+            <Text style={styles.backText}>‹ Back</Text>
+          </Pressable>
 
-        <View style={styles.brandMark}><Text style={styles.brandMarkText}>GC</Text></View>
-        <Text style={styles.kicker}>GAS CAR'S ACCOUNT</Text>
-        <Text style={styles.title}>{mode === 'signin' ? 'Welcome back.' : 'Create your account.'}</Text>
-        <Text style={styles.subtitle}>
-          {mode === 'signin'
-            ? 'Sign in to save vehicles, request help and keep your activity in one place.'
-            : 'Start as a driver. Business access can be added to the same account later.'}
-        </Text>
+          <View style={styles.brandMark}><Text style={styles.brandMarkText}>GC</Text></View>
+          <Text style={styles.kicker}>GAS CAR'S ACCOUNT</Text>
+          <Text style={styles.title}>{mode === 'signin' ? 'Welcome back.' : 'Create your account.'}</Text>
+          <Text style={styles.subtitle}>
+            {mode === 'signin'
+              ? 'Sign in to save vehicles, request help and keep your activity in one place.'
+              : 'Start as a driver. Business access can be added to the same account later.'}
+          </Text>
 
-        {!isSupabaseConfigured ? (
-          <View style={styles.setupNotice}>
-            <Text style={styles.setupTitle}>Development setup required</Text>
-            <Text style={styles.setupText}>The interface is ready. Add the temporary Supabase environment values before testing real accounts.</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.form}>
-          {mode === 'signup' ? (
-            <View>
-              <Text style={styles.label}>Name</Text>
-              <TextInput value={name} onChangeText={setName} placeholder="Your name" placeholderTextColor="#A1A39C" style={styles.input} autoCapitalize="words" />
+          {!isSupabaseConfigured ? (
+            <View style={styles.setupNotice}>
+              <Text style={styles.setupTitle}>Development setup required</Text>
+              <Text style={styles.setupText}>The interface is ready. Add the temporary Supabase environment values before testing real accounts.</Text>
             </View>
           ) : null}
 
-          <View>
-            <Text style={styles.label}>Email</Text>
-            <TextInput value={email} onChangeText={setEmail} placeholder="you@example.com" placeholderTextColor="#A1A39C" style={styles.input} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
+          <View style={styles.form}>
+            {mode === 'signup' ? (
+              <View>
+                <Text style={styles.label}>Name</Text>
+                <TextInput
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Your name"
+                  placeholderTextColor="#A1A39C"
+                  style={styles.input}
+                  autoCapitalize="words"
+                  returnKeyType="next"
+                />
+              </View>
+            ) : null}
+
+            <View>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@example.com"
+                placeholderTextColor="#A1A39C"
+                style={styles.input}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="next"
+              />
+            </View>
+
+            <View>
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.passwordWrap}>
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="At least 6 characters"
+                  placeholderTextColor="#A1A39C"
+                  style={styles.passwordInput}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  onSubmitEditing={() => void submit()}
+                />
+                <Pressable
+                  onPress={() => setShowPassword((value) => !value)}
+                  style={({ pressed }) => [styles.eyeButton, pressed && { opacity: 0.55 }]}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  <Text style={styles.eyeIcon}>{showPassword ? '◉' : '👁'}</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <Pressable
+              disabled={working}
+              onPress={submit}
+              style={({ pressed }) => [styles.submit, pressed && { opacity: 0.85 }, working && { opacity: 0.7 }]}
+            >
+              {working
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.submitText}>{mode === 'signin' ? 'Sign in' : 'Create account'}</Text>}
+            </Pressable>
           </View>
 
-          <View>
-            <Text style={styles.label}>Password</Text>
-            <TextInput value={password} onChangeText={setPassword} placeholder="At least 6 characters" placeholderTextColor="#A1A39C" style={styles.input} secureTextEntry autoCapitalize="none" />
-          </View>
-
-          <Pressable disabled={working} onPress={submit} style={({ pressed }) => [styles.submit, pressed && { opacity: 0.85 }, working && { opacity: 0.7 }]}>
-            {working ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>{mode === 'signin' ? 'Sign in' : 'Create account'}</Text>}
+          <Pressable onPress={() => setMode(mode === 'signin' ? 'signup' : 'signin')} style={styles.switchButton}>
+            <Text style={styles.switchText}>
+              {mode === 'signin' ? "New to Gas Car's? " : 'Already have an account? '}
+              <Text style={styles.switchStrong}>{mode === 'signin' ? 'Create one' : 'Sign in'}</Text>
+            </Text>
           </Pressable>
-        </View>
 
-        <Pressable onPress={() => setMode(mode === 'signin' ? 'signup' : 'signin')} style={styles.switchButton}>
-          <Text style={styles.switchText}>
-            {mode === 'signin' ? "New to Gas Car's? " : 'Already have an account? '}
-            <Text style={styles.switchStrong}>{mode === 'signin' ? 'Create one' : 'Sign in'}</Text>
+          <Text style={styles.legal}>
+            By continuing, users will eventually agree to the production Terms of Service and Privacy Policy before launch.
           </Text>
-        </Pressable>
-
-        <Text style={styles.legal}>By continuing, users will eventually agree to the production Terms of Service and Privacy Policy before launch.</Text>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 22, paddingBottom: 40 },
+  keyboardArea: { flex: 1 },
+  content: { flexGrow: 1, padding: 22, paddingBottom: 120 },
   backButton: { alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 16 },
   backText: { color: colors.muted, fontSize: 13, fontWeight: '800' },
   brandMark: { marginTop: 26, width: 58, height: 58, borderRadius: 19, backgroundColor: colors.coral, alignItems: 'center', justifyContent: 'center' },
@@ -133,6 +206,33 @@ const styles = StyleSheet.create({
   form: { gap: 14, marginTop: 24 },
   label: { color: colors.ink, fontSize: 11, fontWeight: '900', marginBottom: 7 },
   input: { height: 54, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, paddingHorizontal: 15, color: colors.ink, fontSize: 14 },
+  passwordWrap: {
+    height: 54,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  passwordInput: {
+    flex: 1,
+    height: '100%',
+    paddingLeft: 15,
+    paddingRight: 6,
+    color: colors.ink,
+    fontSize: 14,
+  },
+  eyeButton: {
+    width: 52,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eyeIcon: {
+    color: colors.muted,
+    fontSize: 21,
+  },
   submit: { marginTop: 4, minHeight: 54, borderRadius: 17, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
   submitText: { color: colors.white, fontSize: 14, fontWeight: '900' },
   switchButton: { alignSelf: 'center', paddingVertical: 20, paddingHorizontal: 12 },
