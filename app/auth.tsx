@@ -19,6 +19,10 @@ import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 type Mode = 'signin' | 'signup';
 type AccountType = 'driver' | 'business';
 
+const developmentTestMode = ['1', 'true', 'yes', 'on'].includes(
+  (process.env.EXPO_PUBLIC_DEMO_MODE ?? '').trim().toLowerCase(),
+);
+
 export default function AuthScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ email?: string; mode?: Mode; confirmation?: string }>();
@@ -57,6 +61,29 @@ export default function AuthScreen() {
         if (error) throw error;
 
         if (!data.session) {
+          if (developmentTestMode) {
+            const { data: devSignInData, error: devSignInError } = await supabase.auth.signInWithPassword({
+              email: email.trim().toLowerCase(),
+              password,
+            });
+
+            if (!devSignInError && devSignInData.user) {
+              const { data: profile } = await supabase
+                .from('gascars_profiles')
+                .select('role')
+                .eq('id', devSignInData.user.id)
+                .single();
+
+              if (profile?.role === 'business' || accountType === 'business') {
+                router.replace('/business');
+                return;
+              }
+
+              router.replace('/(tabs)');
+              return;
+            }
+          }
+
           router.replace({
             pathname: '/verify-email',
             params: { email: email.trim().toLowerCase(), accountType },
@@ -138,6 +165,13 @@ export default function AuthScreen() {
                 ? 'Create your business account, verify your email, then complete your provider profile.'
                 : 'Create a driver account to save vehicles, request help and personalize Gas Car’s.'}
           </Text>
+
+          {mode === 'signup' && developmentTestMode ? (
+            <View style={styles.devNotice}>
+              <Text style={styles.devNoticeTitle}>Development test mode</Text>
+              <Text style={styles.devNoticeText}>New test accounts are auto-confirmed in the temporary development backend so you can test multiple drivers and businesses without opening email links.</Text>
+            </View>
+          ) : null}
 
           {params.confirmation === 'check' ? (
             <View style={styles.verifiedNotice}>
@@ -277,6 +311,9 @@ const styles = StyleSheet.create({
   kicker: { marginTop: 20, color: colors.coral, fontSize: 11, fontWeight: '950', letterSpacing: 1.6 },
   title: { marginTop: 6, color: colors.ink, fontSize: 35, lineHeight: 38, fontWeight: '950', letterSpacing: -1.4 },
   subtitle: { marginTop: 9, color: colors.muted, fontSize: 13, lineHeight: 20, maxWidth: 420 },
+  devNotice: { marginTop: 18, backgroundColor: colors.violetSoft, borderWidth: 1, borderColor: '#D8CFF7', borderRadius: 17, padding: 13 },
+  devNoticeTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  devNoticeText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
   verifiedNotice: { marginTop: 18, backgroundColor: colors.limeSoft, borderWidth: 1, borderColor: '#D7E9B1', borderRadius: 17, padding: 13 },
   verifiedTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
   verifiedText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
