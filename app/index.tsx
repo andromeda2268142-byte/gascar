@@ -47,11 +47,15 @@ export default function Index() {
     );
   }
 
-  if (user && role === 'admin') {
+  if (!user) {
+    return <Redirect href="/auth" />;
+  }
+
+  if (role === 'admin') {
     return <Redirect href="/admin" />;
   }
 
-  if (user && role === 'business') {
+  if (role === 'business') {
     return <Redirect href="/business" />;
   }
 
