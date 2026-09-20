@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -30,6 +30,17 @@ const locationChoices: Array<{ value: ServiceLocation; title: string; subtitle: 
   { value: 'either', title: 'Either works', subtitle: 'Match shops or mobile mechanics that offer this service.' },
 ];
 
+type ContactMethod = 'app' | 'phone' | 'email';
+
+type MyRequest = {
+  id: string;
+  service: string | null;
+  status: string;
+  accepted_business_id: string | null;
+  created_at: string;
+  provider_name?: string | null;
+};
+
 export default function RequestScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -44,6 +55,9 @@ export default function RequestScreen() {
   const [contactName, setContactName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [contactEmail, setContactEmail] = useState(user?.email ?? '');
+  const [preferredContact, setPreferredContact] = useState<ContactMethod>('app');
+  const [myRequests, setMyRequests] = useState<MyRequest[]>([]);
+  const [loadingMyRequests, setLoadingMyRequests] = useState(false);
   const [pickup, setPickup] = useState('');
   const [destination, setDestination] = useState('');
   const [working, setWorking] = useState(false);
@@ -54,6 +68,74 @@ export default function RequestScreen() {
     issue?: string;
     contact?: string;
   }>({});
+
+  const loadMyRequests = useCallback(async () => {
+    if (!user || !isSupabaseConfigured) {
+      setMyRequests([]);
+      return;
+    }
+
+    setLoadingMyRequests(true);
+    try {
+      const supabase = getSupabaseClient();
+      const { data: leads, error } = await supabase
+        .from('gascars_leads')
+        .select('id,service,status,accepted_business_id,created_at')
+        .eq('customer_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(8);
+
+      if (error) throw error;
+
+      const businessIds = Array.from(
+        new Set((leads ?? []).map((lead) => lead.accepted_business_id).filter(Boolean)),
+      ) as string[];
+
+      const businessNames = new Map<string, string>();
+      if (businessIds.length) {
+        const { data: businesses } = await supabase
+          .from('gascars_businesses')
+          .select('id,name')
+          .in('id', businessIds);
+
+        for (const business of businesses ?? []) {
+          businessNames.set(business.id, business.name);
+        }
+      }
+
+      setMyRequests(
+        (leads ?? []).map((lead) => ({
+          ...lead,
+          provider_name: lead.accepted_business_id
+            ? businessNames.get(lead.accepted_business_id) ?? null
+            : null,
+        })) as MyRequest[],
+      );
+    } catch {
+      // Keep the request form usable even if history cannot refresh.
+    } finally {
+      setLoadingMyRequests(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    void loadMyRequests();
+    if (!user || !isSupabaseConfigured) return;
+
+    const supabase = getSupabaseClient();
+    const channel = supabase
+      .channel('driver-requests-' + user.id)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'gascars_leads', filter: 'customer_id=eq.' + user.id },
+        () => void loadMyRequests(),
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadMyRequests, user]);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -134,8 +216,16 @@ export default function RequestScreen() {
       nextErrors.issue = 'Describe the problem in at least a few words.';
     }
 
-    if (!contactPhone.trim() && !contactEmail.trim()) {
+    if (!contactPhone.trim() && !contactEmail.trim() && preferredContact !== 'app') {
       nextErrors.contact = 'Add a phone number or email so the provider can contact you.';
+    }
+
+    if (preferredContact === 'phone' && !contactPhone.trim()) {
+      nextErrors.contact = 'Add a phone number to use Phone as your preferred contact method.';
+    }
+
+    if (preferredContact === 'email' && !contactEmail.trim()) {
+      nextErrors.contact = 'Add an email address to use Email as your preferred contact method.';
     }
 
     if (Object.keys(nextErrors).length > 0) {
@@ -148,7 +238,8 @@ export default function RequestScreen() {
     setWorking(true);
 
     try {
-      const { error } = await getSupabaseClient().rpc('gascars_create_lead_v2', {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.rpc('gascars_create_lead_v3', {
         p_category: category,
         p_service_id: selectedService.id,
         p_service_location: serviceLocation,
@@ -156,6 +247,7 @@ export default function RequestScreen() {
         p_contact_name: contactName,
         p_contact_phone: contactPhone,
         p_contact_email: contactEmail,
+        p_preferred_contact_method: preferredContact,
         p_vehicle_id: null,
         p_preferred_time: 'As soon as possible',
         p_zip: zip,
@@ -166,6 +258,9 @@ export default function RequestScreen() {
       });
 
       if (error) throw error;
+
+      void supabase.functions.invoke('gascars-email-worker').catch(() => undefined);
+      await loadMyRequests();
 
       Alert.alert(
         'Request created',
@@ -232,6 +327,53 @@ export default function RequestScreen() {
               </Text>
             </View>
           </View>
+
+          {user ? (
+            <View style={styles.myRequestsWrap}>
+              <View style={styles.myRequestsHeader}>
+                <View>
+                  <Text style={styles.myRequestsKicker}>MY REQUESTS</Text>
+                  <Text style={styles.myRequestsTitle}>Repair activity</Text>
+                </View>
+                <Text style={styles.myRequestsCount}>{loadingMyRequests ? 'Syncing…' : myRequests.length + ' recent'}</Text>
+              </View>
+
+              {myRequests.length ? myRequests.slice(0, 4).map((request) => {
+                const accepted = Boolean(request.accepted_business_id);
+                return (
+                  <View key={request.id} style={styles.myRequestCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.myRequestService}>{request.service || 'Service request'}</Text>
+                      <Text style={styles.myRequestMeta}>
+                        {request.status.replaceAll('_', ' ')} · {new Date(request.created_at).toLocaleDateString()}
+                      </Text>
+                      {accepted ? (
+                        <Text style={styles.acceptedText}>
+                          ✓ Accepted by {request.provider_name || 'a provider'}
+                        </Text>
+                      ) : (
+                        <Text style={styles.waitingText}>Waiting for a matching provider</Text>
+                      )}
+                    </View>
+
+                    {accepted ? (
+                      <Pressable
+                        onPress={() => router.push({ pathname: '/lead-chat', params: { leadId: request.id } })}
+                        style={styles.messageProviderButton}
+                      >
+                        <Text style={styles.messageProviderText}>Message</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                );
+              }) : (
+                <View style={styles.myRequestEmpty}>
+                  <Text style={styles.myRequestEmptyTitle}>No requests yet</Text>
+                  <Text style={styles.myRequestEmptyText}>Your requests and provider acceptance status will appear here in real time.</Text>
+                </View>
+              )}
+            </View>
+          ) : null}
 
           <SectionTitle title="Choose a service" right={loadingServices ? 'Loading…' : String(categoryServices.length) + ' available'} />
           <Card style={styles.serviceCard}>
@@ -374,6 +516,29 @@ export default function RequestScreen() {
           <View style={styles.sectionGap}><SectionTitle title="Private contact details" /></View>
           <Card style={styles.formCard}>
             <Text style={styles.privacyNote}>These details stay hidden until an eligible business unlocks the lead.</Text>
+            <Text style={styles.label}>Preferred contact method</Text>
+            <View style={styles.contactMethodRow}>
+              {([
+                ['app', 'In-app', 'Fastest and keeps everything with your request'],
+                ['phone', 'Phone', 'Provider can call you after accepting'],
+                ['email', 'Email', 'Provider can email you after accepting'],
+              ] as Array<[ContactMethod, string, string]>).map(([value, label, detail]) => {
+                const active = preferredContact === value;
+                return (
+                  <Pressable
+                    key={value}
+                    onPress={() => {
+                      setPreferredContact(value);
+                      setErrors((current) => ({ ...current, contact: undefined }));
+                    }}
+                    style={[styles.contactMethod, active && styles.contactMethodActive]}
+                  >
+                    <Text style={[styles.contactMethodLabel, active && styles.contactMethodLabelActive]}>{label}</Text>
+                    <Text style={styles.contactMethodDetail}>{detail}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
             <Text style={styles.label}>Name</Text>
             <TextInput value={contactName} onChangeText={setContactName} placeholder="Your name" placeholderTextColor="#A1A39C" style={styles.input} />
             <Text style={styles.label}>Phone</Text>
@@ -437,6 +602,21 @@ const styles = StyleSheet.create({
   heroIcon: { fontSize: 26 },
   heroTitle: { color: colors.ink, fontSize: 16, fontWeight: '900' },
   heroText: { marginTop: 4, color: colors.muted, lineHeight: 18, fontSize: 12 },
+  myRequestsWrap: { marginBottom: 20 },
+  myRequestsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 9 },
+  myRequestsKicker: { color: colors.coral, fontSize: 8.5, fontWeight: '950', letterSpacing: 1 },
+  myRequestsTitle: { color: colors.ink, fontSize: 18, fontWeight: '950', marginTop: 2 },
+  myRequestsCount: { color: colors.muted, fontSize: 9, fontWeight: '800' },
+  myRequestCard: { minHeight: 78, borderRadius: 17, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 7 },
+  myRequestService: { color: colors.ink, fontSize: 12.5, fontWeight: '950' },
+  myRequestMeta: { color: colors.muted, fontSize: 9, marginTop: 3, textTransform: 'capitalize' },
+  acceptedText: { color: '#3E8E73', fontSize: 9.5, fontWeight: '900', marginTop: 5 },
+  waitingText: { color: colors.muted, fontSize: 9.5, marginTop: 5 },
+  messageProviderButton: { minHeight: 38, borderRadius: 12, backgroundColor: colors.ink, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  messageProviderText: { color: colors.lime, fontSize: 9.5, fontWeight: '950' },
+  myRequestEmpty: { borderRadius: 17, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 14 },
+  myRequestEmptyTitle: { color: colors.ink, fontSize: 11.5, fontWeight: '950' },
+  myRequestEmptyText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
   serviceCard: { padding: 12 },
   searchWrap: { minHeight: 52, borderRadius: 16, backgroundColor: '#F5F3EC', borderWidth: 1, borderColor: colors.line, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13 },
   searchIcon: { color: colors.muted, fontSize: 21, marginRight: 8 },
@@ -476,5 +656,11 @@ const styles = StyleSheet.create({
   fieldError: { color: colors.coral, fontSize: 10.5, fontWeight: '800', marginTop: 7, marginLeft: 4 },
   fieldErrorInside: { color: colors.coral, fontSize: 10, fontWeight: '800', marginTop: -2, marginBottom: 3 },
   privacyNote: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginBottom: 2 },
+  contactMethodRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  contactMethod: { flexGrow: 1, flexBasis: '30%', minWidth: 105, minHeight: 76, borderRadius: 14, backgroundColor: '#F2F0E9', borderWidth: 1, borderColor: colors.line, padding: 10 },
+  contactMethodActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  contactMethodLabel: { color: colors.ink, fontSize: 10.5, fontWeight: '950' },
+  contactMethodLabelActive: { color: colors.lime },
+  contactMethodDetail: { color: colors.muted, fontSize: 8.2, lineHeight: 12, marginTop: 4 },
   submitWrap: { marginTop: 18 },
 });
