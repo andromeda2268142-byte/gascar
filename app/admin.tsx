@@ -19,6 +19,18 @@ import { useAuth } from '@/providers/auth';
 
 type Section = 'overview' | 'businesses' | 'services' | 'users' | 'leads' | 'support' | 'finance' | 'audit';
 
+type SystemHealth = {
+  ok: boolean;
+  negative_wallets: number;
+  missing_wallets: number;
+  active_unverified: number;
+  open_accepted: number;
+  accepted_without_business: number;
+  expired_open: number;
+  leads_without_service: number;
+  ledger_mismatch: number;
+};
+
 type Dashboard = {
   users: number;
   businesses: number;
@@ -161,6 +173,7 @@ export default function AdminScreen() {
   const [section, setSection] = useState<Section>('overview');
   const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -198,6 +211,7 @@ export default function AdminScreen() {
         leadsResult,
         ticketsResult,
         devStatusResult,
+        healthResult,
       ] = await Promise.all([
         supabase.rpc('gascars_admin_dashboard'),
         supabase
@@ -220,6 +234,7 @@ export default function AdminScreen() {
           .order('created_at', { ascending: false })
           .limit(100),
         supabase.rpc('gascars_admin_dev_status'),
+        supabase.rpc('gascars_admin_system_health'),
       ]);
 
       const firstError =
@@ -229,7 +244,8 @@ export default function AdminScreen() {
         usersResult.error ||
         leadsResult.error ||
         ticketsResult.error ||
-        devStatusResult.error;
+        devStatusResult.error ||
+        healthResult.error;
 
       if (firstError) throw firstError;
 
@@ -240,6 +256,7 @@ export default function AdminScreen() {
       setLeads((leadsResult.data ?? []) as Lead[]);
       setTickets((ticketsResult.data ?? []) as Ticket[]);
       setDevAutoConfirm(Boolean((devStatusResult.data as { auto_confirm_new_users?: boolean } | null)?.auto_confirm_new_users));
+      setSystemHealth((healthResult.data ?? null) as SystemHealth | null);
     } catch (error) {
       Alert.alert('Admin portal error', error instanceof Error ? error.message : 'Could not load admin data.');
     } finally {
@@ -256,6 +273,21 @@ export default function AdminScreen() {
     }
     void loadAll();
   }, [authLoading, user, loadAll]);
+
+  const healthIssues = useMemo(() => {
+    if (!systemHealth) return [] as Array<{ label: string; count: number }>;
+
+    return [
+      { label: 'Negative wallets', count: systemHealth.negative_wallets },
+      { label: 'Businesses without wallet', count: systemHealth.missing_wallets },
+      { label: 'Active but unverified businesses', count: systemHealth.active_unverified },
+      { label: 'Open leads already assigned', count: systemHealth.open_accepted },
+      { label: 'Accepted jobs without provider', count: systemHealth.accepted_without_business },
+      { label: 'Expired leads still open', count: systemHealth.expired_open },
+      { label: 'Leads without service ID', count: systemHealth.leads_without_service },
+      { label: 'Wallet / ledger mismatches', count: systemHealth.ledger_mismatch },
+    ].filter((item) => item.count > 0);
+  }, [systemHealth]);
 
   const filteredBusinesses = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -480,6 +512,21 @@ export default function AdminScreen() {
           disabled={workingId === 'dev-auto-confirm'}
           onPress={() => void toggleDevAutoConfirm()}
         />
+      </View>
+
+      <View style={[styles.healthCard, systemHealth?.ok ? styles.healthGood : styles.healthBad]}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.healthKicker}>AUTOMATED SYSTEM CHECKS</Text>
+          <Text style={styles.healthTitle}>{systemHealth?.ok ? 'All critical checks passed' : 'Issues need attention'}</Text>
+          <Text style={styles.healthText}>
+            {systemHealth?.ok
+              ? 'Wallets, lead ownership, provider verification and ledger balances are internally consistent.'
+              : healthIssues.map((item) => item.label + ': ' + item.count).join(' · ') || 'Run Refresh to check the current backend state.'}
+          </Text>
+        </View>
+        <View style={[styles.healthBadge, systemHealth?.ok ? styles.healthBadgeGood : styles.healthBadgeBad]}>
+          <Text style={styles.healthBadgeText}>{systemHealth?.ok ? 'PASS' : String(healthIssues.length)}</Text>
+        </View>
       </View>
 
       <View style={styles.securityCard}>
@@ -790,6 +837,16 @@ const styles = StyleSheet.create({
   testLabKicker: { color: colors.violet, fontSize: 8.5, fontWeight: '950', letterSpacing: 1 },
   testLabTitle: { color: colors.ink, fontSize: 12.5, fontWeight: '950', marginTop: 4 },
   testLabText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  healthCard: { borderRadius: 18, padding: 15, marginTop: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  healthGood: { backgroundColor: colors.limeSoft, borderColor: '#D9EAB8' },
+  healthBad: { backgroundColor: '#FFF0EC', borderColor: '#F0B6A8' },
+  healthKicker: { color: colors.muted, fontSize: 8.5, fontWeight: '950', letterSpacing: 0.9 },
+  healthTitle: { color: colors.ink, fontSize: 12.5, fontWeight: '950', marginTop: 4 },
+  healthText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  healthBadge: { minWidth: 48, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  healthBadgeGood: { backgroundColor: colors.ink },
+  healthBadgeBad: { backgroundColor: colors.coral },
+  healthBadgeText: { color: colors.white, fontSize: 9, fontWeight: '950' },
   securityCard: { backgroundColor: colors.limeSoft, borderRadius: 18, padding: 15, marginTop: 16, borderWidth: 1, borderColor: '#D9EAB8' },
   securityTitle: { color: colors.ink, fontSize: 12, fontWeight: '950' },
   securityText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
