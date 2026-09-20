@@ -39,6 +39,9 @@ export default function ProviderProfileScreen() {
   const [business, setBusiness] = useState<BusinessProfile | null>(null);
   const [reviews, setReviews] = useState<PublicReview[]>([]);
   const [services, setServices] = useState<string[]>([]);
+  const [serviceModes, setServiceModes] = useState<string[]>([]);
+  const [completedJobs, setCompletedJobs] = useState(0);
+  const [publicAverage, setPublicAverage] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -53,7 +56,7 @@ export default function ProviderProfileScreen() {
       setLoading(true);
       const supabase = getSupabaseClient();
 
-      const [businessResult, reviewsResult, offeringsResult] = await Promise.all([
+      const [businessResult, reviewsResult, offeringsResult, statsResult] = await Promise.all([
         supabase
           .from('gascars_businesses')
           .select('id,name,business_type,city,state,is_verified,status')
@@ -68,9 +71,10 @@ export default function ProviderProfileScreen() {
           .limit(30),
         supabase
           .from('gascars_business_services')
-          .select('service_id')
+          .select('service_id,service_mode')
           .eq('business_id', businessId)
           .eq('active', true),
+        supabase.rpc('gascars_provider_public_stats', { p_business_id: businessId }),
       ]);
 
       if (!active) return;
@@ -83,7 +87,23 @@ export default function ProviderProfileScreen() {
         setReviews((reviewsResult.data ?? []) as PublicReview[]);
       }
 
-      const serviceIds = (offeringsResult.data ?? []).map((row) => row.service_id);
+      const offerings = offeringsResult.data ?? [];
+      const serviceIds = offerings.map((row) => row.service_id);
+      if (!offeringsResult.error) {
+        const modes = Array.from(new Set(
+          offerings
+            .map((row) => row.service_mode)
+            .filter((mode): mode is string => Boolean(mode)),
+        ));
+        setServiceModes(modes);
+      }
+
+      if (!statsResult.error) {
+        const stats = Array.isArray(statsResult.data) ? statsResult.data[0] : statsResult.data;
+        setCompletedJobs(Number(stats?.completed_jobs ?? 0));
+        setPublicAverage(stats?.average_rating == null ? null : Number(stats.average_rating));
+      }
+
       if (!offeringsResult.error && serviceIds.length) {
         const { data: serviceRows } = await supabase
           .from('gascars_services')
@@ -118,11 +138,24 @@ export default function ProviderProfileScreen() {
   }, [businessId]);
 
   const average = useMemo(
-    () => reviews.length
+    () => publicAverage ?? (reviews.length
       ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length
-      : 0,
-    [reviews],
+      : 0),
+    [publicAverage, reviews],
   );
+
+  const modeLabels = useMemo(() => {
+    const labels = new Set<string>();
+    for (const mode of serviceModes) {
+      if (mode === 'mobile') labels.add('Mobile service');
+      else if (mode === 'shop') labels.add('Shop service');
+      else if (mode === 'both') {
+        labels.add('Mobile service');
+        labels.add('Shop service');
+      }
+    }
+    return Array.from(labels);
+  }, [serviceModes]);
 
   if (loading) {
     return (
@@ -180,8 +213,8 @@ export default function ProviderProfileScreen() {
         </View>
 
         <View style={styles.ratingCard}>
-          <View>
-            <Text style={styles.ratingKicker}>CUSTOMER RATING</Text>
+          <View style={styles.ratingMain}>
+            <Text style={styles.ratingKicker}>GAS CAR'S REPUTATION</Text>
             <View style={styles.ratingRow}>
               <Text style={styles.ratingValue}>{reviews.length ? average.toFixed(1) : '—'}</Text>
               <Text style={styles.ratingStar}>★</Text>
@@ -192,8 +225,21 @@ export default function ProviderProfileScreen() {
                 : 'No reviews yet'}
             </Text>
           </View>
-          <Text style={styles.verifiedJobs}>Completed jobs only</Text>
+          <View style={styles.jobStat}>
+            <Text style={styles.jobStatValue}>{completedJobs}</Text>
+            <Text style={styles.jobStatLabel}>JOBS COMPLETED</Text>
+          </View>
         </View>
+
+        {modeLabels.length ? (
+          <View style={styles.modeRow}>
+            {modeLabels.map((mode) => (
+              <View key={mode} style={styles.modeBadge}>
+                <Text style={styles.modeBadgeText}>✓ {mode}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         {services.length ? (
           <>
@@ -263,16 +309,22 @@ const styles = StyleSheet.create({
   verified: { borderRadius: 999, backgroundColor: colors.limeSoft, paddingHorizontal: 7, paddingVertical: 4 },
   verifiedText: { color: colors.ink, fontSize: 6.8, fontWeight: '950', letterSpacing: 0.5 },
   ratingCard: { marginTop: 10, borderRadius: 20, backgroundColor: colors.ink, padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12 },
+  ratingMain: { flex: 1 },
+  jobStat: { alignItems: 'flex-end', paddingLeft: 10 },
+  jobStatValue: { color: colors.white, fontSize: 27, lineHeight: 31, fontWeight: '950' },
+  jobStatLabel: { color: colors.lime, fontSize: 6.8, fontWeight: '950', letterSpacing: 0.7, marginTop: 2 },
+  modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 },
+  modeBadge: { borderRadius: 999, backgroundColor: colors.limeSoft, borderWidth: 1, borderColor: '#D8E9B7', paddingHorizontal: 10, paddingVertical: 7 },
+  modeBadgeText: { color: colors.ink, fontSize: 8.5, fontWeight: '950' },
   ratingKicker: { color: colors.lime, fontSize: 8, fontWeight: '950', letterSpacing: 1 },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
   ratingValue: { color: colors.white, fontSize: 35, lineHeight: 40, fontWeight: '950' },
   ratingStar: { color: '#F5B63D', fontSize: 25 },
   ratingCount: { color: '#B9BBB5', fontSize: 8.5, marginTop: 1 },
-  verifiedJobs: { color: colors.white, fontSize: 8, fontWeight: '900', opacity: 0.72 },
   sectionTitle: { color: colors.ink, fontSize: 18, fontWeight: '950', marginTop: 22, marginBottom: 10 },
   serviceChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   serviceChip: { borderRadius: 999, backgroundColor: '#ECE9E0', paddingHorizontal: 10, paddingVertical: 7 },
-  serviceChipText: { color: colors.ink, fontSize: 8.5, fontWeight: '850' },
+  serviceChipText: { color: colors.ink, fontSize: 8.5, fontWeight: '900' },
   reviewList: { gap: 8 },
   reviewCard: { borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 13 },
   reviewTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
