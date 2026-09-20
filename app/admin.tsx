@@ -99,6 +99,16 @@ type Wallet = {
   updated_at: string;
 };
 
+type CreditPurchase = {
+  id: string;
+  business_id: string;
+  provider: string;
+  amount_cents: number;
+  credits: number;
+  status: string;
+  created_at: string;
+};
+
 type AuditEntry = {
   id: string;
   actor_id: string;
@@ -179,6 +189,9 @@ export default function AdminScreen() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [purchases, setPurchases] = useState<CreditPurchase[]>([]);
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [devAutoConfirm, setDevAutoConfirm] = useState(false);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -212,6 +225,9 @@ export default function AdminScreen() {
         ticketsResult,
         devStatusResult,
         healthResult,
+        walletsResult,
+        purchasesResult,
+        auditResult,
       ] = await Promise.all([
         supabase.rpc('gascars_admin_dashboard'),
         supabase
@@ -235,6 +251,20 @@ export default function AdminScreen() {
           .limit(100),
         supabase.rpc('gascars_admin_dev_status'),
         supabase.rpc('gascars_admin_system_health'),
+        supabase
+          .from('gascars_wallets')
+          .select('business_id,balance,updated_at')
+          .order('balance', { ascending: false }),
+        supabase
+          .from('gascars_credit_purchases')
+          .select('id,business_id,provider,amount_cents,credits,status,created_at')
+          .order('created_at', { ascending: false })
+          .limit(100),
+        supabase
+          .from('gascars_audit')
+          .select('id,actor_id,action,detail,created_at')
+          .order('created_at', { ascending: false })
+          .limit(100),
       ]);
 
       const firstError =
@@ -245,7 +275,10 @@ export default function AdminScreen() {
         leadsResult.error ||
         ticketsResult.error ||
         devStatusResult.error ||
-        healthResult.error;
+        healthResult.error ||
+        walletsResult.error ||
+        purchasesResult.error ||
+        auditResult.error;
 
       if (firstError) throw firstError;
 
@@ -257,6 +290,9 @@ export default function AdminScreen() {
       setTickets((ticketsResult.data ?? []) as Ticket[]);
       setDevAutoConfirm(Boolean((devStatusResult.data as { auto_confirm_new_users?: boolean } | null)?.auto_confirm_new_users));
       setSystemHealth((healthResult.data ?? null) as SystemHealth | null);
+      setWallets((walletsResult.data ?? []) as Wallet[]);
+      setPurchases((purchasesResult.data ?? []) as CreditPurchase[]);
+      setAuditEntries((auditResult.data ?? []) as AuditEntry[]);
     } catch (error) {
       Alert.alert('Admin portal error', error instanceof Error ? error.message : 'Could not load admin data.');
     } finally {
@@ -345,6 +381,18 @@ export default function AdminScreen() {
     } finally {
       setWorkingId(null);
     }
+  }
+
+  async function grantTestCredits(businessId: string) {
+    await runAction(
+      'credit-' + businessId,
+      () => getSupabaseClient().rpc('gascars_admin_grant_credits', {
+        p_business_id: businessId,
+        p_credits: 10,
+        p_reason: 'Admin QA grant',
+      }),
+      '10 test credits were added.',
+    );
   }
 
   async function toggleDevAutoConfirm() {
@@ -671,6 +719,285 @@ export default function AdminScreen() {
           </View>
         </View>
       ))}
+    </View>
+  );
+
+  const financeView = (
+    <View style={styles.listGap}>
+      <View style={styles.rowCard}>
+        <Text style={styles.rowTitle}>Credit system</Text>
+        <Text style={styles.rowMeta}>Outstanding credits: {dashboard?.credits_outstanding ?? 0} · Purchases recorded: {purchases.length}</Text>
+        <Text style={styles.bodyText}>Development grants and test purchases use the same wallet ledger that production Stripe purchases will use.</Text>
+      </View>
+
+      {businesses.map((business) => {
+        const wallet = wallets.find((item) => item.business_id === business.id);
+        return (
+          <View key={business.id} style={styles.rowCard}>
+            <View style={styles.rowTitleLine}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowTitle}>{business.name}</Text>
+                <Text style={styles.rowMeta}>{business.business_type} · {business.status}</Text>
+              </View>
+              <View style={styles.financeBalance}>
+                <Text style={styles.financeBalanceValue}>{wallet?.balance ?? 0}</Text>
+                <Text style={styles.financeBalanceLabel}>credits</Text>
+              </View>
+            </View>
+            <View style={styles.actions}>
+              <SmallButton
+                label="+10 test credits"
+                active
+                disabled={workingId === 'credit-' + business.id}
+                onPress={() => void grantTestCredits(business.id)}
+              />
+            </View>
+          </View>
+        );
+      })}
+
+      {purchases.slice(0, 20).map((purchase) => {
+        const business = businesses.find((item) => item.id === purchase.business_id);
+        return (
+          <View key={purchase.id} style={styles.rowCard}>
+            <View style={styles.rowTitleLine}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowTitle}>{business?.name || 'Provider purchase'}</Text>
+                <Text style={styles.rowMeta}>{purchase.provider} · {'
+      {tickets.length === 0 ? (
+        <View style={styles.empty}><Text style={styles.emptyTitle}>No support tickets</Text><Text style={styles.emptyText}>Open customer and provider issues will appear here.</Text></View>
+      ) : tickets.map((ticket) => (
+        <View key={ticket.id} style={styles.rowCard}>
+          <View style={styles.rowTitleLine}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{ticket.subject}</Text>
+              <Text style={styles.rowMeta}>Opened {formatDate(ticket.created_at)} · User {ticket.user_id.slice(0,8)}</Text>
+            </View>
+            <Status value={ticket.status} />
+          </View>
+          <View style={styles.actions}>
+            <SmallButton
+              label="Open"
+              active={ticket.status === 'open'}
+              disabled={workingId === ticket.id}
+              onPress={() => void runAction(ticket.id, () => getSupabaseClient().rpc('gascars_admin_set_ticket_status', { p_ticket_id: ticket.id, p_status: 'open' }))}
+            />
+            <SmallButton
+              label="Resolve"
+              active={ticket.status === 'resolved'}
+              disabled={workingId === ticket.id}
+              onPress={() => void runAction(ticket.id, () => getSupabaseClient().rpc('gascars_admin_set_ticket_status', { p_ticket_id: ticket.id, p_status: 'resolved' }))}
+            />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+
+  const body =
+    section === 'overview' ? overview :
+    section === 'businesses' ? businessesView :
+    section === 'services' ? servicesView :
+    section === 'users' ? usersView :
+    section === 'leads' ? leadsView :
+    section === 'support' ? supportView :
+    section === 'finance' ? financeView :
+    auditView;
+
+  const searchable = !['overview', 'support', 'finance', 'audit'].includes(section);
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={[styles.shell, desktop && styles.shellDesktop]}>
+        {sidebar}
+        <View style={styles.main}>
+          <ScrollView
+            contentContainerStyle={[styles.mainContent, desktop && styles.mainContentDesktop]}
+            refreshControl={<RefreshControl refreshing={loading} onRefresh={loadAll} />}
+            showsVerticalScrollIndicator={false}
+          >
+            {!desktop ? (
+              <View style={styles.mobileTop}>
+                <View>
+                  <Text style={styles.kicker}>GAS CAR'S ADMIN</Text>
+                  <Text style={styles.mobileTitle}>{nav.find((item) => item.id === section)?.label}</Text>
+                </View>
+                <Pressable onPress={() => router.replace('/(tabs)/profile')} style={styles.appButton}>
+                  <Text style={styles.appButtonText}>App</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.pageHeader}>
+                <View>
+                  <Text style={styles.kicker}>ADMIN CONTROL CENTER</Text>
+                  <Text style={styles.pageTitle}>{nav.find((item) => item.id === section)?.label}</Text>
+                </View>
+                <Pressable onPress={() => void loadAll()} style={styles.refreshButton}>
+                  <Text style={styles.refreshText}>Refresh</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {searchable ? (
+              <View style={styles.searchBox}>
+                <Text style={styles.searchIcon}>⌕</Text>
+                <TextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder={'Search ' + section + '...'}
+                  placeholderTextColor="#999B94"
+                  style={styles.searchInput}
+                />
+                {search ? <Pressable onPress={() => setSearch('')}><Text style={styles.clear}>×</Text></Pressable> : null}
+              </View>
+            ) : null}
+
+            {loading && authorized ? (
+              <View style={styles.inlineLoading}><ActivityIndicator color={colors.coral} /></View>
+            ) : body}
+
+            {!desktop ? (
+              <View style={styles.mobileFooter}>
+                <Text style={styles.adminEmail}>{user.email}</Text>
+                <Pressable onPress={() => void logout()}><Text style={styles.mobileLogout}>Sign out</Text></Pressable>
+              </View>
+            ) : null}
+          </ScrollView>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#F6F3EB' },
+  shell: { flex: 1 },
+  shellDesktop: { flexDirection: 'row' },
+  sidebar: { backgroundColor: '#20231E' },
+  sidebarDesktop: { width: 230, minWidth: 230 },
+  mobileNav: { minHeight: 56 },
+  mobileNavContent: { paddingHorizontal: 12, paddingVertical: 9, gap: 7 },
+  mobileChip: { minHeight: 38, paddingHorizontal: 12, borderRadius: 13, backgroundColor: '#30342D', justifyContent: 'center' },
+  mobileChipActive: { backgroundColor: colors.lime },
+  mobileChipText: { color: '#C8CAC3', fontSize: 10.5, fontWeight: '900' },
+  mobileChipTextActive: { color: colors.ink },
+  adminBrand: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 20, paddingTop: 24 },
+  adminLogo: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.coral, alignItems: 'center', justifyContent: 'center' },
+  adminLogoText: { color: colors.white, fontSize: 12, fontWeight: '950' },
+  adminBrandName: { color: colors.white, fontSize: 14, fontWeight: '950' },
+  adminBrandSub: { color: '#9EA198', fontSize: 9, marginTop: 2 },
+  navStack: { paddingHorizontal: 12, gap: 5 },
+  navItem: { minHeight: 46, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13 },
+  navItemActive: { backgroundColor: '#34382F' },
+  navIcon: { width: 20, color: '#A8AAA3', fontSize: 15, fontWeight: '900' },
+  navText: { color: '#BFC1BA', fontSize: 11.5, fontWeight: '800' },
+  navTextActive: { color: colors.lime },
+  sidebarBottom: { marginTop: 'auto', padding: 20, gap: 10 },
+  adminEmail: { color: '#9EA198', fontSize: 9.5 },
+  sidebarLink: { color: colors.white, fontSize: 11, fontWeight: '800' },
+  main: { flex: 1 },
+  mainContent: { padding: 16, paddingBottom: 50 },
+  mainContentDesktop: { width: '100%', maxWidth: 1220, alignSelf: 'center', padding: 30 },
+  mobileTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 },
+  mobileTitle: { color: colors.ink, fontSize: 27, fontWeight: '950', marginTop: 3, letterSpacing: -1 },
+  appButton: { minWidth: 54, height: 38, borderRadius: 12, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+  appButtonText: { color: colors.white, fontSize: 10, fontWeight: '900' },
+  pageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+  pageTitle: { color: colors.ink, fontSize: 34, fontWeight: '950', letterSpacing: -1.4, marginTop: 4 },
+  kicker: { color: colors.coral, fontSize: 9.5, fontWeight: '950', letterSpacing: 1.4 },
+  refreshButton: { height: 42, paddingHorizontal: 15, borderRadius: 13, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+  refreshText: { color: colors.white, fontSize: 10, fontWeight: '900' },
+  searchBox: { minHeight: 50, borderRadius: 16, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, marginBottom: 16 },
+  searchIcon: { color: colors.muted, fontSize: 21, marginRight: 8 },
+  searchInput: { flex: 1, minHeight: 48, color: colors.ink, fontSize: 12.5, fontWeight: '700' },
+  clear: { color: colors.muted, fontSize: 24 },
+  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  metricCard: { flexGrow: 1, minWidth: 145, flexBasis: '45%', backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 19, padding: 15 },
+  metricCardDesktop: { flexBasis: '30%' },
+  metricLabel: { color: colors.muted, fontSize: 9, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.6 },
+  metricValue: { color: colors.ink, fontSize: 28, fontWeight: '950', marginTop: 8 },
+  metricDetail: { color: colors.muted, fontSize: 9.5, marginTop: 3 },
+  sectionTitle: { color: colors.ink, fontSize: 18, fontWeight: '950', marginTop: 25, marginBottom: 11 },
+  opsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  opsCard: { flexGrow: 1, flexBasis: '45%', minWidth: 220, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 19, padding: 16 },
+  opsIcon: { color: colors.coral, fontSize: 22, fontWeight: '900' },
+  opsTitle: { color: colors.ink, fontSize: 13, fontWeight: '950', marginTop: 10 },
+  opsText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
+  testLabCard: { backgroundColor: colors.violetSoft, borderRadius: 18, padding: 15, marginTop: 16, borderWidth: 1, borderColor: '#D8CFF7', flexDirection: 'row', alignItems: 'center', gap: 12 },
+  testLabKicker: { color: colors.violet, fontSize: 8.5, fontWeight: '950', letterSpacing: 1 },
+  testLabTitle: { color: colors.ink, fontSize: 12.5, fontWeight: '950', marginTop: 4 },
+  testLabText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  healthCard: { borderRadius: 18, padding: 15, marginTop: 16, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  healthGood: { backgroundColor: colors.limeSoft, borderColor: '#D9EAB8' },
+  healthBad: { backgroundColor: '#FFF0EC', borderColor: '#F0B6A8' },
+  healthKicker: { color: colors.muted, fontSize: 8.5, fontWeight: '950', letterSpacing: 0.9 },
+  healthTitle: { color: colors.ink, fontSize: 12.5, fontWeight: '950', marginTop: 4 },
+  healthText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  healthBadge: { minWidth: 48, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  healthBadgeGood: { backgroundColor: colors.ink },
+  healthBadgeBad: { backgroundColor: colors.coral },
+  healthBadgeText: { color: colors.white, fontSize: 9, fontWeight: '950' },
+  securityCard: { backgroundColor: colors.limeSoft, borderRadius: 18, padding: 15, marginTop: 16, borderWidth: 1, borderColor: '#D9EAB8' },
+  securityTitle: { color: colors.ink, fontSize: 12, fontWeight: '950' },
+  securityText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
+  listGap: { gap: 10 },
+  rowCard: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 18, padding: 14 },
+  rowMain: { flexDirection: 'row' },
+  rowTitleLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  rowTitle: { color: colors.ink, fontSize: 13.5, fontWeight: '950' },
+  rowMeta: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 4 },
+  financeBalance: { minWidth: 70, borderRadius: 14, backgroundColor: colors.limeSoft, paddingHorizontal: 10, paddingVertical: 7, alignItems: 'center' },
+  financeBalanceValue: { color: colors.ink, fontSize: 15, fontWeight: '950' },
+  financeBalanceLabel: { color: colors.muted, fontSize: 7.5, marginTop: 1 },
+  auditDetail: { color: colors.muted, fontSize: 9, lineHeight: 14, marginTop: 8 },
+  bodyText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 10 },
+  status: { alignSelf: 'flex-start', backgroundColor: '#EEECE5', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
+  statusPositive: { backgroundColor: colors.limeSoft },
+  statusWarning: { backgroundColor: colors.sunSoft },
+  statusText: { color: colors.ink, fontSize: 7.5, fontWeight: '950', letterSpacing: 0.5 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
+  smallButton: { minHeight: 34, borderRadius: 11, backgroundColor: '#EEECE5', paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
+  smallButtonActive: { backgroundColor: colors.ink },
+  smallButtonDanger: { backgroundColor: '#FFF0EC' },
+  smallButtonText: { color: colors.ink, fontSize: 9.5, fontWeight: '900', textTransform: 'capitalize' },
+  smallButtonTextActive: { color: colors.white },
+  smallButtonTextDanger: { color: '#C14D37' },
+  empty: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 18, padding: 20 },
+  emptyTitle: { color: colors.ink, fontSize: 13, fontWeight: '950' },
+  emptyText: { color: colors.muted, fontSize: 10, marginTop: 4 },
+  inlineLoading: { paddingVertical: 40, alignItems: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  centerCard: { flex: 1, justifyContent: 'center', alignItems: 'flex-start', padding: 30, maxWidth: 480 },
+  deniedTitle: { color: colors.ink, fontSize: 30, fontWeight: '950', marginTop: 6 },
+  deniedText: { color: colors.muted, fontSize: 12, lineHeight: 18, marginVertical: 16 },
+  mobileFooter: { marginTop: 28, paddingTop: 18, borderTopWidth: 1, borderTopColor: colors.line, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  mobileLogout: { color: colors.coral, fontSize: 10.5, fontWeight: '900' },
+});
+ + (purchase.amount_cents / 100).toFixed(2)} · {formatDate(purchase.created_at)}</Text>
+              </View>
+              <Status value={purchase.status} />
+            </View>
+            <Text style={styles.bodyText}>+{purchase.credits} credits</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+
+  const auditView = (
+    <View style={styles.listGap}>
+      {auditEntries.length ? auditEntries.map((entry) => (
+        <View key={entry.id} style={styles.rowCard}>
+          <Text style={styles.rowTitle}>{entry.action}</Text>
+          <Text style={styles.rowMeta}>{formatDate(entry.created_at)} · Actor {entry.actor_id?.slice(0, 8) || 'system'}</Text>
+          <Text style={styles.auditDetail}>{JSON.stringify(entry.detail)}</Text>
+        </View>
+      )) : (
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>No audit activity</Text>
+          <Text style={styles.emptyText}>Administrative and privileged provider actions will appear here.</Text>
+        </View>
+      )}
     </View>
   );
 
