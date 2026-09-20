@@ -61,7 +61,7 @@ export default function ExploreScreen() {
           <TextInput
             value={search}
             onChangeText={setSearch}
-            placeholder="Buscar gasolina, grúa, autopartes..."
+            placeholder="Search nearby gas stations..."
             placeholderTextColor="#8E9188"
             style={styles.searchInput}
           />
@@ -94,28 +94,6 @@ export default function ExploreScreen() {
           </Pressable>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
-          {filters.map((item) => {
-            const active = category === item.key;
-            return (
-              <Pressable
-                key={item.key}
-                onPress={() => {
-                  if (item.key === 'mechanic') {
-                    router.push('/(tabs)/request');
-                    return;
-                  }
-                  setCategory(item.key);
-                  setSelected(null);
-                }}
-                style={[styles.filter, active && styles.filterActive]}
-              >
-                <Text>{item.icon}</Text>
-                <Text style={[styles.filterText, active && styles.filterTextActive]}>{item.label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
 
         <View style={styles.webMap}>
           <View style={styles.webMapGrid} />
@@ -127,7 +105,7 @@ export default function ExploreScreen() {
         </View>
 
         <View style={styles.sectionRow}>
-          <Text style={styles.sectionTitle}>{filters.find((item) => item.key === category)?.label}</Text>
+          <Text style={styles.sectionTitle}>Gas nearby</Text>
           <Text style={styles.count}>{visiblePlaces.length} demo</Text>
         </View>
 
@@ -194,11 +172,6 @@ const styles = StyleSheet.create({
   quickActionTitleDark: { color: colors.white, fontSize: 12, fontWeight: '950' },
   quickActionMeta: { color: colors.muted, fontSize: 8.5, marginTop: 3 },
   quickActionMetaDark: { color: '#ECEDE7', fontSize: 8.5, marginTop: 3 },
-  filters: { gap: 8, paddingVertical: 14 },
-  filter: { minHeight: 40, borderRadius: 13, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 13, flexDirection: 'row', gap: 7, alignItems: 'center' },
-  filterActive: { backgroundColor: colors.ink, borderColor: colors.ink },
-  filterText: { color: colors.ink, fontSize: 11, fontWeight: '800' },
-  filterTextActive: { color: colors.white },
   webMap: { minHeight: 210, borderRadius: 24, backgroundColor: '#E9E7DF', borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', padding: 24, overflow: 'hidden' },
   webMapGrid: { ...StyleSheet.absoluteFillObject, opacity: 0.15, borderWidth: 18, borderColor: colors.white },
   webMapIcon: { fontSize: 34, color: colors.coral },
