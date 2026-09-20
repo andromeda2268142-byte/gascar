@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -90,6 +90,7 @@ export default function RequestScreen() {
     vehicleId?: string | string[];
   }>();
   const { user } = useAuth();
+  const scrollRef = useRef<ScrollView>(null);
 
   const requestedCategory = Array.isArray(params.category) ? params.category[0] : params.category;
   const requestedVehicleId = Array.isArray(params.vehicleId) ? params.vehicleId[0] : params.vehicleId;
@@ -653,6 +654,7 @@ export default function RequestScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -1175,7 +1177,13 @@ export default function RequestScreen() {
                 <View style={[styles.successDot, styles.successDotMuted]} />
                 <Text style={styles.successTimelineTextMuted}>Provider accepts</Text>
               </View>
-              <Pressable onPress={() => setRequestSuccess(null)} style={styles.successButton}>
+              <Pressable
+                onPress={() => {
+                  setRequestSuccess(null);
+                  requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: true }));
+                }}
+                style={styles.successButton}
+              >
                 <Text style={styles.successButtonText}>View live status</Text>
               </Pressable>
             </View>
@@ -1215,6 +1223,7 @@ export default function RequestScreen() {
                       setSelectedService(null);
                       setServiceQuery('');
                       setIssue('');
+                      requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: true }));
                     }}
                     style={styles.reviewSubmit}
                   >
