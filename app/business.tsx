@@ -350,7 +350,7 @@ export default function BusinessScreen() {
             <Text style={styles.kicker}>BUSINESS PORTAL</Text>
             <Text style={styles.title}>{business.name}</Text>
             <Text style={styles.subtitle}>
-              {business.business_type === 'mechanic' ? 'Mechanic' : 'Towing'} · {business.status === 'active' ? 'Active' : 'Pending approval'}
+              {business.business_type === 'mechanic' ? 'Mechanic' : business.business_type === 'towing' ? 'Towing' : 'Auto Parts'} · {business.status === 'active' ? 'Active' : 'Pending approval'}
             </Text>
           </View>
           <View style={[styles.statusPill, business.status === 'active' && styles.statusActive]}>
@@ -360,8 +360,12 @@ export default function BusinessScreen() {
 
         {business.status !== 'active' ? (
           <View style={styles.pendingNotice}>
-            <Text style={styles.pendingTitle}>You can configure services now.</Text>
-            <Text style={styles.pendingText}>Matched leads will begin appearing after this business is approved and active.</Text>
+            <Text style={styles.pendingTitle}>{business.business_type === 'parts' ? 'Business pending approval.' : 'You can configure services now.'}</Text>
+            <Text style={styles.pendingText}>
+              {business.business_type === 'parts'
+                ? 'Your store profile is saved. Marketplace visibility begins after admin approval.'
+                : 'Matched leads will begin appearing after this business is approved and active.'}
+            </Text>
           </View>
         ) : null}
 
