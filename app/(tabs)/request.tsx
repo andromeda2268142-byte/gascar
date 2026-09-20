@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -73,6 +74,11 @@ export default function RequestScreen() {
   const [preferredContacts, setPreferredContacts] = useState<ContactMethod[]>(['app']);
   const [myRequests, setMyRequests] = useState<MyRequest[]>([]);
   const [notifications, setNotifications] = useState<DriverNotification[]>([]);
+  const [reviewedLeadIds, setReviewedLeadIds] = useState<string[]>([]);
+  const [dismissedReviewIds, setDismissedReviewIds] = useState<string[]>([]);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewWorking, setReviewWorking] = useState(false);
   const [loadingMyRequests, setLoadingMyRequests] = useState(false);
   const [cancelWorkingId, setCancelWorkingId] = useState<string | null>(null);
   const [pickup, setPickup] = useState('');
@@ -99,7 +105,7 @@ export default function RequestScreen() {
     setLoadingMyRequests(true);
     try {
       const supabase = getSupabaseClient();
-      const [leadsResult, notificationsResult] = await Promise.all([
+      const [leadsResult, notificationsResult, reviewsResult] = await Promise.all([
         supabase
           .from('gascars_leads')
           .select('id,service,status,accepted_business_id,customer_archived_at,created_at,updated_at')
@@ -112,13 +118,19 @@ export default function RequestScreen() {
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
           .limit(12),
+        supabase
+          .from('gascars_reviews')
+          .select('lead_id')
+          .eq('customer_id', user.id),
       ]);
 
       if (leadsResult.error) throw leadsResult.error;
       if (notificationsResult.error) throw notificationsResult.error;
+      if (reviewsResult.error) throw reviewsResult.error;
 
       const leads = leadsResult.data ?? [];
       setNotifications((notificationsResult.data ?? []) as DriverNotification[]);
+      setReviewedLeadIds((reviewsResult.data ?? []).map((review) => review.lead_id));
 
       const businessIds = Array.from(
         new Set(leads.map((lead) => lead.accepted_business_id).filter(Boolean)),
@@ -171,6 +183,11 @@ export default function RequestScreen() {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'gascars_lead_messages', filter: 'recipient_id=eq.' + user.id },
+        () => void loadMyRequests(),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'gascars_reviews', filter: 'customer_id=eq.' + user.id },
         () => void loadMyRequests(),
       )
       .subscribe();
@@ -273,6 +290,58 @@ export default function RequestScreen() {
     if (currentCase.status === 'accepted') return 1;
     return 0;
   }, [currentCase]);
+
+  const pendingReview = useMemo(() => {
+    return myRequests.find(
+      (request) =>
+        request.status === 'completed' &&
+        Boolean(request.accepted_business_id) &&
+        !reviewedLeadIds.includes(request.id) &&
+        !dismissedReviewIds.includes(request.id),
+    ) ?? null;
+  }, [dismissedReviewIds, myRequests, reviewedLeadIds]);
+
+  useEffect(() => {
+    if (!pendingReview) {
+      setReviewRating(0);
+      setReviewComment('');
+    }
+  }, [pendingReview?.id]);
+
+  async function submitReview() {
+    if (!pendingReview || reviewWorking) return;
+
+    if (reviewRating < 1) {
+      Alert.alert('Choose a rating', 'Select from 1 to 5 stars.');
+      return;
+    }
+
+    setReviewWorking(true);
+    try {
+      const { error } = await getSupabaseClient().rpc('gascars_create_review', {
+        p_lead_id: pendingReview.id,
+        p_rating: reviewRating,
+        p_comment: reviewComment.trim() || null,
+      });
+
+      if (error) throw error;
+
+      setReviewedLeadIds((current) => [...new Set([...current, pendingReview.id])]);
+      setDismissedReviewIds((current) => [...new Set([...current, pendingReview.id])]);
+      setReviewRating(0);
+      setReviewComment('');
+
+      Alert.alert('Thank you', 'Your review is now part of this provider’s profile.');
+      await loadMyRequests();
+    } catch (error) {
+      Alert.alert(
+        'Could not submit review',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    } finally {
+      setReviewWorking(false);
+    }
+  }
 
   function cancelService(request: MyRequest) {
     if (cancelWorkingId) return;
@@ -882,6 +951,88 @@ export default function RequestScreen() {
             ) : null}
           </Pressable>
         ) : null}
+        <Modal
+          visible={Boolean(pendingReview)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            if (pendingReview) {
+              setDismissedReviewIds((current) => [...new Set([...current, pendingReview.id])]);
+            }
+          }}
+        >
+          <View style={styles.reviewOverlay}>
+            <View style={styles.reviewCard}>
+              <View style={styles.reviewSuccessIcon}>
+                <Text style={styles.reviewSuccessIconText}>✓</Text>
+              </View>
+
+              <Text style={styles.reviewKicker}>SERVICE COMPLETED</Text>
+              <Text style={styles.reviewTitle}>How did it go?</Text>
+              <Text style={styles.reviewProvider}>
+                {pendingReview?.provider_name || 'Your provider'}
+              </Text>
+              <Text style={styles.reviewService}>
+                {pendingReview?.service || 'Service'}
+              </Text>
+
+              <View style={styles.reviewStars}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <Pressable
+                    key={star}
+                    disabled={reviewWorking}
+                    onPress={() => setReviewRating(star)}
+                    hitSlop={8}
+                  >
+                    <Text style={[
+                      styles.reviewStar,
+                      star <= reviewRating && styles.reviewStarActive,
+                    ]}>
+                      ★
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <TextInput
+                value={reviewComment}
+                onChangeText={setReviewComment}
+                placeholder="Optional: tell others about your experience"
+                placeholderTextColor="#9B9E96"
+                style={styles.reviewInput}
+                multiline
+                maxLength={1000}
+                textAlignVertical="top"
+              />
+
+              <Pressable
+                disabled={reviewWorking || reviewRating < 1}
+                onPress={() => void submitReview()}
+                style={({ pressed }) => [
+                  styles.reviewSubmit,
+                  (pressed || reviewWorking || reviewRating < 1) && { opacity: 0.55 },
+                ]}
+              >
+                <Text style={styles.reviewSubmitText}>
+                  {reviewWorking ? 'Submitting…' : 'Submit review'}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                disabled={reviewWorking}
+                onPress={() => {
+                  if (pendingReview) {
+                    setDismissedReviewIds((current) => [...new Set([...current, pendingReview.id])]);
+                  }
+                }}
+                style={styles.reviewLater}
+              >
+                <Text style={styles.reviewLaterText}>Not now</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -979,4 +1130,20 @@ const styles = StyleSheet.create({
   contactMethodCheckText: { color: colors.ink, fontSize: 9, fontWeight: '950' },
   contactMethodHelp: { color: colors.muted, fontSize: 9, marginTop: -1, marginBottom: 2 },
   submitWrap: { marginTop: 18 },
+  reviewOverlay: { flex: 1, backgroundColor: 'rgba(24, 26, 22, 0.48)', alignItems: 'center', justifyContent: 'center', padding: 22 },
+  reviewCard: { width: '100%', maxWidth: 470, borderRadius: 26, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 20, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 10 },
+  reviewSuccessIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: colors.limeSoft, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  reviewSuccessIconText: { color: colors.ink, fontSize: 25, fontWeight: '950' },
+  reviewKicker: { color: colors.coral, fontSize: 8.5, fontWeight: '950', letterSpacing: 1.2 },
+  reviewTitle: { color: colors.ink, fontSize: 26, fontWeight: '950', letterSpacing: -0.8, marginTop: 5 },
+  reviewProvider: { color: colors.ink, fontSize: 13, fontWeight: '950', marginTop: 8 },
+  reviewService: { color: colors.muted, fontSize: 9.5, marginTop: 3 },
+  reviewStars: { flexDirection: 'row', gap: 8, marginTop: 18, marginBottom: 16 },
+  reviewStar: { color: '#D7D5CE', fontSize: 36, lineHeight: 40 },
+  reviewStarActive: { color: '#F5B63D' },
+  reviewInput: { width: '100%', minHeight: 94, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: '#F8F7F2', paddingHorizontal: 13, paddingTop: 12, paddingBottom: 12, color: colors.ink, fontSize: 11.5 },
+  reviewSubmit: { width: '100%', minHeight: 50, borderRadius: 15, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  reviewSubmitText: { color: colors.lime, fontSize: 11.5, fontWeight: '950' },
+  reviewLater: { minHeight: 38, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  reviewLaterText: { color: colors.muted, fontSize: 9.5, fontWeight: '900' },
 });
