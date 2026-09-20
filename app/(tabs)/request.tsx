@@ -660,7 +660,7 @@ export default function RequestScreen() {
           automaticallyAdjustKeyboardInsets
         >
           <Text style={styles.kicker}>REQUEST SERVICE</Text>
-          <Text style={styles.title}>What does your car need?</Text>
+          <Text style={styles.title}>Get help for your car.</Text>
 
           <View style={styles.segment}>
             <Pressable
@@ -718,6 +718,21 @@ export default function RequestScreen() {
               ) : (
                 <Text style={styles.caseProvider}>Searching for a matching provider</Text>
               )}
+
+              <View style={styles.caseSummary}>
+                {currentCase.vehicle_label ? (
+                  <View style={styles.caseSummaryItem}>
+                    <Text style={styles.caseSummaryLabel}>VEHICLE</Text>
+                    <Text style={styles.caseSummaryValue}>{currentCase.vehicle_label}</Text>
+                  </View>
+                ) : null}
+                <View style={styles.caseSummaryItem}>
+                  <Text style={styles.caseSummaryLabel}>AREA</Text>
+                  <Text style={styles.caseSummaryValue}>
+                    {currentCase.pickup_address || currentCase.zip || 'Service location'}
+                  </Text>
+                </View>
+              </View>
 
               <View style={styles.progressTrack}>
                 {[
@@ -791,6 +806,52 @@ export default function RequestScreen() {
             </View>
           ) : null}
 
+          <View style={styles.flowHeader}>
+            <View style={styles.flowNumber}><Text style={styles.flowNumberText}>1</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.flowKicker}>STEP 1 OF 3</Text>
+              <Text style={styles.flowTitle}>Vehicle & service</Text>
+            </View>
+          </View>
+
+          <View style={styles.vehicleSection}>
+            <View style={styles.vehicleSectionTop}>
+              <Text style={styles.vehicleSectionLabel}>YOUR VEHICLE</Text>
+              <Pressable onPress={() => router.push('/(tabs)/garage')}>
+                <Text style={styles.vehicleManage}>Manage garage ›</Text>
+              </Pressable>
+            </View>
+            {vehicles.length ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.vehicleChoices}>
+                {vehicles.map((vehicle) => {
+                  const active = selectedVehicleId === vehicle.id;
+                  const label = [vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ');
+                  return (
+                    <Pressable
+                      key={vehicle.id}
+                      onPress={() => setSelectedVehicleId(vehicle.id)}
+                      style={[styles.vehicleChoice, active && styles.vehicleChoiceActive]}
+                    >
+                      <Text style={styles.vehicleChoiceIcon}>🚘</Text>
+                      <Text style={[styles.vehicleChoiceName, active && styles.vehicleChoiceNameActive]}>{label}</Text>
+                      <Text style={[styles.vehicleChoiceMeta, active && styles.vehicleChoiceMetaActive]}>
+                        {vehicle.trim || (vehicle.is_primary ? 'Primary vehicle' : 'Saved vehicle')}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <Pressable onPress={() => router.push('/(tabs)/garage')} style={styles.noVehicleCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.noVehicleTitle}>Add a vehicle for faster requests</Text>
+                  <Text style={styles.noVehicleText}>Optional · year, make and model will be sent automatically.</Text>
+                </View>
+                <Text style={styles.noVehicleArrow}>›</Text>
+              </Pressable>
+            )}
+          </View>
+
           <SectionTitle title="Find your service" right={loadingServices ? 'Loading…' : undefined} />
           <Card style={styles.serviceCard}>
             <View style={styles.searchWrap}>
@@ -859,9 +920,19 @@ export default function RequestScreen() {
           </Card>
           {errors.service ? <Text style={styles.fieldError}>{errors.service}</Text> : null}
 
-          <View style={styles.sectionGap}>
-            <SectionTitle title={category === 'repair' ? 'Where should the service happen?' : 'Service location'} />
-          </View>
+          {selectedService ? (
+            <>
+              <View style={styles.flowHeaderSecondary}>
+                <View style={styles.flowNumber}><Text style={styles.flowNumberText}>2</Text></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.flowKicker}>STEP 2 OF 3</Text>
+                  <Text style={styles.flowTitle}>Where & what is happening</Text>
+                </View>
+              </View>
+
+              <View style={styles.sectionGap}>
+                <SectionTitle title={category === 'repair' ? 'Where should the service happen?' : 'Service location'} />
+              </View>
 
           {category === 'repair' ? (
             <View style={styles.locationList}>
@@ -965,6 +1036,21 @@ export default function RequestScreen() {
               </View>
             ) : null}
           </Card>
+            </>
+          ) : null}
+
+          {selectedService &&
+          serviceLocation &&
+          issue.trim().length >= 5 &&
+          (category !== 'towing' || (pickup.trim() && destination.trim())) ? (
+            <>
+              <View style={styles.flowHeaderSecondary}>
+                <View style={styles.flowNumber}><Text style={styles.flowNumberText}>3</Text></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.flowKicker}>STEP 3 OF 3</Text>
+                  <Text style={styles.flowTitle}>Confirm & send</Text>
+                </View>
+              </View>
 
           <View style={styles.sectionGap}><SectionTitle title="Private contact details" /></View>
           <Card style={styles.formCard}>
@@ -1044,11 +1130,13 @@ export default function RequestScreen() {
 
           <View style={styles.submitWrap}>
             <PrimaryButton
-              label={user ? (working ? 'Creating request…' : 'Create matched request') : 'Sign in to continue'}
+              label={user ? (working ? 'Sending request…' : 'Send service request') : 'Sign in to continue'}
               accent
               onPress={working ? undefined : submit}
             />
           </View>
+            </>
+          ) : null}
         </ScrollView>
 
         {user && messageCase?.accepted_business_id ? (
@@ -1067,7 +1155,35 @@ export default function RequestScreen() {
           </Pressable>
         ) : null}
         <Modal
-          visible={Boolean(pendingReview)}
+          visible={Boolean(requestSuccess)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setRequestSuccess(null)}
+        >
+          <View style={styles.successOverlay}>
+            <View style={styles.successCard}>
+              <View style={styles.successIcon}><Text style={styles.successIconText}>✓</Text></View>
+              <Text style={styles.successKicker}>REQUEST SENT</Text>
+              <Text style={styles.successTitle}>We're finding the right provider.</Text>
+              <Text style={styles.successService}>{requestSuccess?.service}</Text>
+              {requestSuccess?.vehicle ? <Text style={styles.successMeta}>🚘 {requestSuccess.vehicle}</Text> : null}
+              <Text style={styles.successMeta}>📍 {requestSuccess?.location}</Text>
+              <View style={styles.successTimeline}>
+                <View style={styles.successDot} />
+                <Text style={styles.successTimelineText}>Request sent</Text>
+                <View style={styles.successLine} />
+                <View style={[styles.successDot, styles.successDotMuted]} />
+                <Text style={styles.successTimelineTextMuted}>Provider accepts</Text>
+              </View>
+              <Pressable onPress={() => setRequestSuccess(null)} style={styles.successButton}>
+                <Text style={styles.successButtonText}>View live status</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={Boolean(pendingReview || reviewComplete)}
           transparent
           animationType="fade"
           onRequestClose={() => {
