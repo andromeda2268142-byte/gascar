@@ -166,6 +166,7 @@ export default function AdminScreen() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [devAutoConfirm, setDevAutoConfirm] = useState(false);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState<string | null>(null);
@@ -196,6 +197,7 @@ export default function AdminScreen() {
         usersResult,
         leadsResult,
         ticketsResult,
+        devStatusResult,
       ] = await Promise.all([
         supabase.rpc('gascars_admin_dashboard'),
         supabase
@@ -217,6 +219,7 @@ export default function AdminScreen() {
           .select('id,user_id,subject,status,created_at')
           .order('created_at', { ascending: false })
           .limit(100),
+        supabase.rpc('gascars_admin_dev_status'),
       ]);
 
       const firstError =
@@ -225,7 +228,8 @@ export default function AdminScreen() {
         servicesResult.error ||
         usersResult.error ||
         leadsResult.error ||
-        ticketsResult.error;
+        ticketsResult.error ||
+        devStatusResult.error;
 
       if (firstError) throw firstError;
 
@@ -235,6 +239,7 @@ export default function AdminScreen() {
       setUsers((usersResult.data ?? []) as AdminUser[]);
       setLeads((leadsResult.data ?? []) as Lead[]);
       setTickets((ticketsResult.data ?? []) as Ticket[]);
+      setDevAutoConfirm(Boolean((devStatusResult.data as { auto_confirm_new_users?: boolean } | null)?.auto_confirm_new_users));
     } catch (error) {
       Alert.alert('Admin portal error', error instanceof Error ? error.message : 'Could not load admin data.');
     } finally {
@@ -300,6 +305,21 @@ export default function AdminScreen() {
       await loadAll();
     } catch (error) {
       Alert.alert('Action failed', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setWorkingId(null);
+    }
+  }
+
+  async function toggleDevAutoConfirm() {
+    setWorkingId('dev-auto-confirm');
+    try {
+      const { error } = await getSupabaseClient().rpc('gascars_admin_set_dev_auto_confirm', {
+        p_enabled: !devAutoConfirm,
+      });
+      if (error) throw error;
+      await loadAll();
+    } catch (error) {
+      Alert.alert('Could not change test mode', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setWorkingId(null);
     }
@@ -436,6 +456,25 @@ export default function AdminScreen() {
           <Text style={styles.opsTitle}>Customer support</Text>
           <Text style={styles.opsText}>Track open issues and resolve support tickets.</Text>
         </Pressable>
+      </View>
+
+      <View style={styles.testLabCard}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.testLabKicker}>DEVELOPMENT TEST LAB</Text>
+          <Text style={styles.testLabTitle}>Email auto-confirm is {devAutoConfirm ? 'ON' : 'OFF'}</Text>
+          <Text style={styles.testLabText}>
+            {devAutoConfirm
+              ? 'New test accounts can sign in immediately without opening verification emails. Keep this enabled only in the temporary development backend.'
+              : 'New accounts must complete normal email verification.'}
+          </Text>
+        </View>
+        <SmallButton
+          label={devAutoConfirm ? 'Disable' : 'Enable'}
+          active={!devAutoConfirm}
+          danger={devAutoConfirm}
+          disabled={workingId === 'dev-auto-confirm'}
+          onPress={() => void toggleDevAutoConfirm()}
+        />
       </View>
 
       <View style={styles.securityCard}>
@@ -730,6 +769,10 @@ const styles = StyleSheet.create({
   opsIcon: { color: colors.coral, fontSize: 22, fontWeight: '900' },
   opsTitle: { color: colors.ink, fontSize: 13, fontWeight: '950', marginTop: 10 },
   opsText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
+  testLabCard: { backgroundColor: colors.violetSoft, borderRadius: 18, padding: 15, marginTop: 16, borderWidth: 1, borderColor: '#D8CFF7', flexDirection: 'row', alignItems: 'center', gap: 12 },
+  testLabKicker: { color: colors.violet, fontSize: 8.5, fontWeight: '950', letterSpacing: 1 },
+  testLabTitle: { color: colors.ink, fontSize: 12.5, fontWeight: '950', marginTop: 4 },
+  testLabText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
   securityCard: { backgroundColor: colors.limeSoft, borderRadius: 18, padding: 15, marginTop: 16, borderWidth: 1, borderColor: '#D9EAB8' },
   securityTitle: { color: colors.ink, fontSize: 12, fontWeight: '950' },
   securityText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
