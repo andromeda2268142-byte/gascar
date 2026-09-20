@@ -186,8 +186,6 @@ export default function ProfileScreen() {
                         <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
                       </View>
                     </Pressable>
-                      </View>
-                    ) : null}
                   </View>
                 ))}
               </View>
