@@ -35,6 +35,7 @@ export default function BusinessOnboardingScreen() {
   const [businessZip, setBusinessZip] = useState('');
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const checkAccount = useCallback(async () => {
     if (!user || !isSupabaseConfigured) {
@@ -81,26 +82,33 @@ export default function BusinessOnboardingScreen() {
   }
 
   async function createBusiness() {
+    setFormError(null);
     if (!user || role !== 'business') return;
 
     if (businessName.trim().length < 2) {
-      Alert.alert('Business name required', 'Enter the public name of the business.');
+      const text = 'Enter the public name of the business.';
+      setFormError(text);
+      Alert.alert('Business name required', text);
       return;
     }
 
     if (!businessPhone.trim()) {
-      Alert.alert('Business phone required', 'Add a phone number for this provider account.');
+      const text = 'Add a phone number for this provider account.';
+      setFormError(text);
+      Alert.alert('Business phone required', text);
       return;
     }
 
     if (!/^\d{5}$/.test(businessZip.trim())) {
-      Alert.alert('ZIP code required', 'Enter a valid 5-digit primary service ZIP.');
+      const text = 'Enter a valid 5-digit primary service ZIP.';
+      setFormError(text);
+      Alert.alert('ZIP code required', text);
       return;
     }
 
     setWorking(true);
     try {
-      const { error } = await getSupabaseClient().rpc('gascars_create_business_profile', {
+      const { data, error } = await getSupabaseClient().rpc('gascars_create_business_profile_v2', {
         p_business_type: businessType,
         p_name: businessName.trim(),
         p_phone: businessPhone.trim(),
@@ -112,9 +120,20 @@ export default function BusinessOnboardingScreen() {
       });
 
       if (error) throw error;
+
+      const result = data as { ok?: boolean; error?: string; business_id?: string; existing?: boolean } | null;
+      if (!result?.ok) {
+        const text = result?.error || 'Could not create provider profile.';
+        setFormError(text);
+        Alert.alert('Could not continue', text);
+        return;
+      }
+
       router.replace('/(provider)/services');
     } catch (error) {
-      Alert.alert('Could not create provider profile', error instanceof Error ? error.message : 'Please try again.');
+      const text = error instanceof Error ? error.message : 'Please try again.';
+      setFormError(text);
+      Alert.alert('Could not create provider profile', text);
     } finally {
       setWorking(false);
     }
@@ -226,6 +245,13 @@ export default function BusinessOnboardingScreen() {
             <Text style={styles.label}>Primary service ZIP</Text>
             <TextInput value={businessZip} onChangeText={setBusinessZip} placeholder="75201" placeholderTextColor="#A1A39C" style={styles.input} keyboardType="number-pad" maxLength={5} />
 
+            {formError ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorTitle}>Could not continue</Text>
+                <Text style={styles.errorText}>{formError}</Text>
+              </View>
+            ) : null}
+
             <View style={styles.note}>
               <Text style={styles.noteTitle}>Next step</Text>
               <Text style={styles.noteText}>
@@ -267,6 +293,9 @@ const styles = StyleSheet.create({
   input: { minHeight: 50, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAF9F5', paddingHorizontal: 13, color: colors.ink, fontSize: 12.5 },
   cityStateRow: { flexDirection: 'row', gap: 8 },
   stateField: { width: 88 },
+  errorBox: { borderRadius: 15, backgroundColor: '#FFF0EC', borderWidth: 1, borderColor: '#F0B6A8', padding: 12, marginTop: 3 },
+  errorTitle: { color: colors.ink, fontSize: 10.5, fontWeight: '900' },
+  errorText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
   note: { borderRadius: 15, backgroundColor: colors.sunSoft, borderWidth: 1, borderColor: '#E9D793', padding: 12, marginTop: 3 },
   noteTitle: { color: colors.ink, fontSize: 10.5, fontWeight: '900' },
   noteText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
