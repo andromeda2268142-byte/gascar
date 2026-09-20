@@ -215,7 +215,7 @@ export default function RequestScreen() {
   const searchResults = useMemo(
     () => filterServices(categoryServices, serviceQuery)
       .filter((item) => !item.slug.startsWith('other-'))
-      .slice(0, 5),
+      .slice(0, 3),
     [categoryServices, serviceQuery],
   );
 
