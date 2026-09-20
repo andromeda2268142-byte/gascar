@@ -1218,7 +1218,7 @@ export default function RequestScreen() {
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               showsVerticalScrollIndicator={false}
             >
-            <View style={styles.reviewCard}>
+            <Pressable style={styles.reviewCard} onPress={() => Keyboard.dismiss()}>
               {reviewComplete ? (
                 <>
                   <View style={styles.reviewSuccessIcon}>
@@ -1325,7 +1325,7 @@ export default function RequestScreen() {
                   </Pressable>
                 </>
               )}
-            </View>
+            </Pressable>
             </ScrollView>
           </KeyboardAvoidingView>
         </Modal>
