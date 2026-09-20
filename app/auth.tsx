@@ -33,18 +33,27 @@ export default function AuthScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [working, setWorking] = useState(false);
+  const [message, setMessage] = useState<{ type: 'error' | 'info'; text: string } | null>(null);
 
   async function submit() {
+    setMessage(null);
+
     if (!isSupabaseConfigured) {
-      Alert.alert('Supabase not connected on this device', 'Add the temporary Supabase URL and publishable key to the Expo environment before testing accounts.');
+      const text = 'Supabase is not connected in this browser. Check the Expo environment values.';
+      setMessage({ type: 'error', text });
+      Alert.alert('Supabase not connected on this device', text);
       return;
     }
     if (mode === 'signup' && !name.trim()) {
-      Alert.alert('Name required', accountType === 'business' ? 'Enter your name before creating the business account.' : 'Enter your name before creating the account.');
+      const text = accountType === 'business' ? 'Enter your name before creating the business account.' : 'Enter your name before creating the account.';
+      setMessage({ type: 'error', text });
+      Alert.alert('Name required', text);
       return;
     }
     if (!email.trim() || password.length < 6) {
-      Alert.alert('Check your information', 'Enter a valid email and a password with at least 6 characters.');
+      const text = 'Enter a valid email and a password with at least 6 characters.';
+      setMessage({ type: 'error', text });
+      Alert.alert('Check your information', text);
       return;
     }
 
@@ -132,7 +141,9 @@ export default function AuthScreen() {
 
       router.replace('/(tabs)/profile');
     } catch (error) {
-      Alert.alert('Could not continue', error instanceof Error ? error.message : 'Please try again.');
+      const text = error instanceof Error ? error.message : 'Please try again.';
+      setMessage({ type: 'error', text });
+      Alert.alert('Could not continue', text);
     } finally {
       setWorking(false);
     }
@@ -146,12 +157,13 @@ export default function AuthScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           automaticallyAdjustKeyboardInsets
           showsVerticalScrollIndicator={false}
         >
+          <View style={styles.content}>
           <Pressable onPress={() => router.back()} style={styles.backButton}>
             <Text style={styles.backText}>‹ Back</Text>
           </Pressable>
@@ -178,6 +190,13 @@ export default function AuthScreen() {
             <View style={styles.verifiedNotice}>
               <Text style={styles.verifiedTitle}>Ready to check your account</Text>
               <Text style={styles.verifiedText}>Sign in below. Gas Car’s will only continue if Supabase confirms that your email has actually been verified.</Text>
+            </View>
+          ) : null}
+
+          {message ? (
+            <View style={message.type === 'error' ? styles.errorNotice : styles.infoNotice}>
+              <Text style={styles.feedbackTitle}>{message.type === 'error' ? 'Could not continue' : 'Info'}</Text>
+              <Text style={styles.feedbackText}>{message.text}</Text>
             </View>
           ) : null}
 
@@ -295,6 +314,7 @@ export default function AuthScreen() {
           <Text style={styles.legal}>
             By continuing, users will eventually agree to the production Terms of Service and Privacy Policy before launch.
           </Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -304,7 +324,8 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   keyboardArea: { flex: 1 },
-  content: { flexGrow: 1, padding: 22, paddingBottom: 120 },
+  scrollContent: { flexGrow: 1, paddingVertical: 22, paddingBottom: 120 },
+  content: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: 22 },
   backButton: { alignSelf: 'flex-start', paddingVertical: 8, paddingRight: 16 },
   backText: { color: colors.muted, fontSize: 13, fontWeight: '800' },
   brandMark: { marginTop: 26, width: 58, height: 58, borderRadius: 19, backgroundColor: colors.coral, alignItems: 'center', justifyContent: 'center' },
@@ -318,6 +339,10 @@ const styles = StyleSheet.create({
   verifiedNotice: { marginTop: 18, backgroundColor: colors.limeSoft, borderWidth: 1, borderColor: '#D7E9B1', borderRadius: 17, padding: 13 },
   verifiedTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
   verifiedText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
+  errorNotice: { marginTop: 18, backgroundColor: '#FFF0EC', borderWidth: 1, borderColor: '#F0B6A8', borderRadius: 17, padding: 13 },
+  infoNotice: { marginTop: 18, backgroundColor: colors.limeSoft, borderWidth: 1, borderColor: '#D7E9B1', borderRadius: 17, padding: 13 },
+  feedbackTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  feedbackText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
   setupNotice: { marginTop: 18, backgroundColor: colors.sunSoft, borderWidth: 1, borderColor: '#EBD99C', borderRadius: 17, padding: 13 },
   setupTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
   setupText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
