@@ -31,42 +31,122 @@ export async function loadServiceCatalog(category?: ServiceCategory): Promise<Se
 }
 
 function normalize(value: string) {
-  return value.trim().toLowerCase();
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function editDistance(a: string, b: string) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  const current = new Array<number>(b.length + 1);
+
+  for (let i = 1; i <= a.length; i += 1) {
+    current[0] = i;
+
+    for (let j = 1; j <= b.length; j += 1) {
+      const substitution = previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1);
+      const insertion = current[j - 1] + 1;
+      const deletion = previous[j] + 1;
+
+      let best = Math.min(substitution, insertion, deletion);
+
+      if (
+        i > 1 &&
+        j > 1 &&
+        a[i - 1] === b[j - 2] &&
+        a[i - 2] === b[j - 1]
+      ) {
+        best = Math.min(best, previous[j - 2] + 1);
+      }
+
+      current[j] = best;
+    }
+
+    for (let j = 0; j <= b.length; j += 1) previous[j] = current[j];
+  }
+
+  return previous[b.length];
+}
+
+function tokenScore(queryToken: string, candidate: string) {
+  if (!queryToken || !candidate) return 0;
+  if (candidate === queryToken) return 12;
+  if (candidate.startsWith(queryToken) || queryToken.startsWith(candidate)) return 9;
+  if (queryToken.length >= 3 && candidate.includes(queryToken)) return 7;
+
+  const allowedDistance =
+    queryToken.length >= 8 ? 2 :
+    queryToken.length >= 4 ? 1 :
+    0;
+
+  if (!allowedDistance || Math.abs(candidate.length - queryToken.length) > allowedDistance) {
+    return 0;
+  }
+
+  const distance = editDistance(queryToken, candidate);
+  if (distance <= allowedDistance) return distance === 1 ? 8 : 5;
+
+  return 0;
 }
 
 export function filterServices(items: ServiceCatalogItem[], query: string) {
   const needle = normalize(query);
-  if (!needle) return items;
+
+  // Blank search intentionally shows no catalog. Results appear as the customer types.
+  if (needle.length < 2) return [];
 
   const tokens = needle.split(/\s+/).filter(Boolean);
 
   return items
     .map((item) => {
-      const haystack = [
-        item.name,
-        item.group_name ?? '',
-        item.description ?? '',
-        ...(item.keywords ?? []),
-      ]
-        .join(' ')
-        .toLowerCase();
+      const name = normalize(item.name);
+      const group = normalize(item.group_name ?? '');
+      const description = normalize(item.description ?? '');
+      const keywords = (item.keywords ?? []).map(normalize);
 
-      const allTokensMatch = tokens.every((token) => haystack.includes(token));
-      const nameStarts = item.name.toLowerCase().startsWith(needle);
-      const nameIncludes = item.name.toLowerCase().includes(needle);
-      const keywordStarts = (item.keywords ?? []).some((keyword) =>
-        keyword.toLowerCase().startsWith(needle),
+      const candidateTokens = Array.from(
+        new Set(
+          [
+            ...name.split(/\s+/),
+            ...group.split(/\s+/),
+            ...description.split(/\s+/),
+            ...keywords.flatMap((keyword) => keyword.split(/\s+/)),
+          ].filter(Boolean),
+        ),
       );
 
       let score = 0;
-      if (nameStarts) score += 10;
-      if (nameIncludes) score += 7;
-      if (keywordStarts) score += 5;
-      if (allTokensMatch) score += 3;
+      let matchedTokens = 0;
 
-      return { item, score };
+      for (const token of tokens) {
+        let best = 0;
+        for (const candidate of candidateTokens) {
+          best = Math.max(best, tokenScore(token, candidate));
+        }
+
+        if (best > 0) {
+          matchedTokens += 1;
+          score += best;
+        }
+      }
+
+      if (name === needle) score += 30;
+      else if (name.startsWith(needle)) score += 18;
+      else if (name.includes(needle)) score += 12;
+
+      if (keywords.some((keyword) => keyword === needle)) score += 18;
+      if (matchedTokens === tokens.length) score += 8;
+
+      return { item, score, matchedTokens };
     })
-    .filter((entry) => entry.score > 0)
+    .filter((entry) => entry.matchedTokens === tokens.length && entry.score > 0)
     .sort((a, b) => b.score - a.score || a.item.sort_order - b.item.sort_order)
     .map((entry) => entry.item);
 }
