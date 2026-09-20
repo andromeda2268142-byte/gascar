@@ -41,6 +41,17 @@ type MyRequest = {
   provider_name?: string | null;
 };
 
+type DriverNotification = {
+  id: string;
+  lead_id: string | null;
+  message_id: string | null;
+  type: 'lead_accepted' | 'job_started' | 'job_completed' | 'new_message';
+  title: string;
+  body: string;
+  read_at: string | null;
+  created_at: string;
+};
+
 export default function RequestScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -57,6 +68,7 @@ export default function RequestScreen() {
   const [contactEmail, setContactEmail] = useState(user?.email ?? '');
   const [preferredContact, setPreferredContact] = useState<ContactMethod>('app');
   const [myRequests, setMyRequests] = useState<MyRequest[]>([]);
+  const [notifications, setNotifications] = useState<DriverNotification[]>([]);
   const [loadingMyRequests, setLoadingMyRequests] = useState(false);
   const [pickup, setPickup] = useState('');
   const [destination, setDestination] = useState('');
@@ -78,17 +90,29 @@ export default function RequestScreen() {
     setLoadingMyRequests(true);
     try {
       const supabase = getSupabaseClient();
-      const { data: leads, error } = await supabase
-        .from('gascars_leads')
-        .select('id,service,status,accepted_business_id,created_at')
-        .eq('customer_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(8);
+      const [leadsResult, notificationsResult] = await Promise.all([
+        supabase
+          .from('gascars_leads')
+          .select('id,service,status,accepted_business_id,created_at')
+          .eq('customer_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(8),
+        supabase
+          .from('gascars_notifications')
+          .select('id,lead_id,message_id,type,title,body,read_at,created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(12),
+      ]);
 
-      if (error) throw error;
+      if (leadsResult.error) throw leadsResult.error;
+      if (notificationsResult.error) throw notificationsResult.error;
+
+      const leads = leadsResult.data ?? [];
+      setNotifications((notificationsResult.data ?? []) as DriverNotification[]);
 
       const businessIds = Array.from(
-        new Set((leads ?? []).map((lead) => lead.accepted_business_id).filter(Boolean)),
+        new Set(leads.map((lead) => lead.accepted_business_id).filter(Boolean)),
       ) as string[];
 
       const businessNames = new Map<string, string>();
@@ -104,7 +128,7 @@ export default function RequestScreen() {
       }
 
       setMyRequests(
-        (leads ?? []).map((lead) => ({
+        leads.map((lead) => ({
           ...lead,
           provider_name: lead.accepted_business_id
             ? businessNames.get(lead.accepted_business_id) ?? null
@@ -128,6 +152,16 @@ export default function RequestScreen() {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'gascars_leads', filter: 'customer_id=eq.' + user.id },
+        () => void loadMyRequests(),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'gascars_notifications', filter: 'user_id=eq.' + user.id },
+        () => void loadMyRequests(),
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'gascars_lead_messages', filter: 'recipient_id=eq.' + user.id },
         () => void loadMyRequests(),
       )
       .subscribe();
@@ -186,6 +220,21 @@ export default function RequestScreen() {
     setSelectedService(item);
     setServiceQuery(item.name);
     setErrors((current) => ({ ...current, service: undefined }));
+  }
+
+  async function openNotification(notification: DriverNotification) {
+    const supabase = getSupabaseClient();
+
+    if (!notification.read_at) {
+      await supabase.rpc('gascars_mark_notification_read', {
+        p_notification_id: notification.id,
+      });
+    }
+
+    if (notification.lead_id) {
+      await loadMyRequests();
+      router.push({ pathname: '/lead-chat', params: { leadId: notification.lead_id } });
+    }
   }
 
   async function submit() {
@@ -328,6 +377,47 @@ export default function RequestScreen() {
             </View>
           </View>
 
+          {user && notifications.length ? (
+            <View style={styles.activityWrap}>
+              <View style={styles.activityHeader}>
+                <View>
+                  <Text style={styles.activityKicker}>LIVE UPDATES</Text>
+                  <Text style={styles.activityTitle}>What changed</Text>
+                </View>
+                <View style={styles.unreadPill}>
+                  <Text style={styles.unreadPillText}>
+                    {notifications.filter((item) => !item.read_at).length} unread
+                  </Text>
+                </View>
+              </View>
+
+              {notifications.slice(0, 4).map((notification) => (
+                <Pressable
+                  key={notification.id}
+                  onPress={() => void openNotification(notification)}
+                  style={[
+                    styles.notificationCard,
+                    !notification.read_at && styles.notificationCardUnread,
+                  ]}
+                >
+                  <View style={[styles.notificationIcon, !notification.read_at && styles.notificationIconUnread]}>
+                    <Text style={styles.notificationIconText}>
+                      {notification.type === 'new_message' ? '✉' :
+                       notification.type === 'lead_accepted' ? '✓' :
+                       notification.type === 'job_started' ? '▶' : '✓'}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.notificationTitle}>{notification.title}</Text>
+                    <Text style={styles.notificationBody}>{notification.body}</Text>
+                    <Text style={styles.notificationTime}>{new Date(notification.created_at).toLocaleString()}</Text>
+                  </View>
+                  {!notification.read_at ? <View style={styles.unreadDot} /> : null}
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
           {user ? (
             <View style={styles.myRequestsWrap}>
               <View style={styles.myRequestsHeader}>
@@ -347,6 +437,12 @@ export default function RequestScreen() {
                       <Text style={styles.myRequestMeta}>
                         {request.status.replaceAll('_', ' ')} · {new Date(request.created_at).toLocaleDateString()}
                       </Text>
+                      {request.status === 'in_progress' ? (
+                        <Text style={styles.inProgressText}>● {request.provider_name || 'Your provider'} is working on this now</Text>
+                      ) : null}
+                      {request.status === 'completed' ? (
+                        <Text style={styles.completedText}>✓ Work marked completed</Text>
+                      ) : null}
                       {accepted ? (
                         <Text style={styles.acceptedText}>
                           ✓ Accepted by {request.provider_name || 'a provider'}
@@ -602,6 +698,21 @@ const styles = StyleSheet.create({
   heroIcon: { fontSize: 26 },
   heroTitle: { color: colors.ink, fontSize: 16, fontWeight: '900' },
   heroText: { marginTop: 4, color: colors.muted, lineHeight: 18, fontSize: 12 },
+  activityWrap: { marginBottom: 18 },
+  activityHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 9 },
+  activityKicker: { color: colors.coral, fontSize: 8.5, fontWeight: '950', letterSpacing: 1 },
+  activityTitle: { color: colors.ink, fontSize: 18, fontWeight: '950', marginTop: 2 },
+  unreadPill: { borderRadius: 999, backgroundColor: colors.coralSoft, paddingHorizontal: 9, paddingVertical: 5 },
+  unreadPillText: { color: colors.coral, fontSize: 8.5, fontWeight: '950' },
+  notificationCard: { minHeight: 78, borderRadius: 17, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 7 },
+  notificationCardUnread: { borderColor: '#D1E7A5', backgroundColor: '#FBFFF3' },
+  notificationIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#EEECE5', alignItems: 'center', justifyContent: 'center' },
+  notificationIconUnread: { backgroundColor: colors.limeSoft },
+  notificationIconText: { color: colors.ink, fontSize: 14, fontWeight: '950' },
+  notificationTitle: { color: colors.ink, fontSize: 11.5, fontWeight: '950' },
+  notificationBody: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  notificationTime: { color: '#A0A39B', fontSize: 7.5, marginTop: 5 },
+  unreadDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.coral },
   myRequestsWrap: { marginBottom: 20 },
   myRequestsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 9 },
   myRequestsKicker: { color: colors.coral, fontSize: 8.5, fontWeight: '950', letterSpacing: 1 },
@@ -611,6 +722,8 @@ const styles = StyleSheet.create({
   myRequestService: { color: colors.ink, fontSize: 12.5, fontWeight: '950' },
   myRequestMeta: { color: colors.muted, fontSize: 9, marginTop: 3, textTransform: 'capitalize' },
   acceptedText: { color: '#3E8E73', fontSize: 9.5, fontWeight: '900', marginTop: 5 },
+  inProgressText: { color: colors.coral, fontSize: 9.5, fontWeight: '900', marginTop: 5 },
+  completedText: { color: '#3E8E73', fontSize: 9.5, fontWeight: '900', marginTop: 5 },
   waitingText: { color: colors.muted, fontSize: 9.5, marginTop: 5 },
   messageProviderButton: { minHeight: 38, borderRadius: 12, backgroundColor: colors.ink, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   messageProviderText: { color: colors.lime, fontSize: 9.5, fontWeight: '950' },
