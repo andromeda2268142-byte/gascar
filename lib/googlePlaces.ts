@@ -16,19 +16,20 @@ export type AddressPlace = {
 };
 
 function apiKey() {
+  const placesKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY;
+  const webServiceKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_KEY;
+
+  if (placesKey || webServiceKey) return placesKey || webServiceKey || '';
+
   if (Platform.OS === 'ios') {
-    return process.env.EXPO_PUBLIC_GOOGLE_MAPS_IOS_KEY
-      || process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_KEY
-      || '';
+    return process.env.EXPO_PUBLIC_GOOGLE_MAPS_IOS_KEY || '';
   }
 
   if (Platform.OS === 'android') {
-    return process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY
-      || process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_KEY
-      || '';
+    return process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY || '';
   }
 
-  return process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_KEY || '';
+  return '';
 }
 
 export function isGooglePlacesConfigured() {
