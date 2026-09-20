@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '@/constants/theme';
 import { mapPlaces, type MapCategory, type MapPlace } from '@/data/mapPlaces';
@@ -29,6 +30,7 @@ function openDirections(place: MapPlace) {
 }
 
 export default function ExploreScreen() {
+  const router = useRouter();
   const [category, setCategory] = useState<MapCategory>('gas');
   const [selected, setSelected] = useState<MapPlace | null>(null);
   const [search, setSearch] = useState('');
@@ -59,7 +61,7 @@ export default function ExploreScreen() {
           <TextInput
             value={search}
             onChangeText={setSearch}
-            placeholder="Buscar gasolina, taller, grúa..."
+            placeholder="Buscar gasolina, grúa, autopartes..."
             placeholderTextColor="#8E9188"
             style={styles.searchInput}
           />
@@ -72,6 +74,10 @@ export default function ExploreScreen() {
               <Pressable
                 key={item.key}
                 onPress={() => {
+                  if (item.key === 'mechanic') {
+                    router.push('/(tabs)/request');
+                    return;
+                  }
                   setCategory(item.key);
                   setSelected(null);
                 }}
