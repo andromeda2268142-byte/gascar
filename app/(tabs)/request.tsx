@@ -1187,79 +1187,113 @@ export default function RequestScreen() {
           transparent
           animationType="fade"
           onRequestClose={() => {
-            if (pendingReview) {
+            if (reviewComplete) {
+              setReviewComplete(null);
+            } else if (pendingReview) {
               setDismissedReviewIds((current) => [...new Set([...current, pendingReview.id])]);
             }
           }}
         >
           <View style={styles.reviewOverlay}>
             <View style={styles.reviewCard}>
-              <View style={styles.reviewSuccessIcon}>
-                <Text style={styles.reviewSuccessIconText}>✓</Text>
-              </View>
+              {reviewComplete ? (
+                <>
+                  <View style={styles.reviewSuccessIcon}>
+                    <Text style={styles.reviewSuccessIconText}>✓</Text>
+                  </View>
+                  <Text style={styles.reviewKicker}>REVIEW POSTED</Text>
+                  <Text style={styles.reviewTitle}>Service complete.</Text>
+                  <Text style={styles.reviewProvider}>{reviewComplete.provider}</Text>
+                  <Text style={styles.reviewService}>{reviewComplete.service}</Text>
+                  <Text style={styles.reviewCompleteText}>
+                    Your rating is now part of this provider's verified Gas Car's profile.
+                  </Text>
 
-              <Text style={styles.reviewKicker}>SERVICE COMPLETED</Text>
-              <Text style={styles.reviewTitle}>How did it go?</Text>
-              <Text style={styles.reviewProvider}>
-                {pendingReview?.provider_name || 'Your provider'}
-              </Text>
-              <Text style={styles.reviewService}>
-                {pendingReview?.service || 'Service'}
-              </Text>
-
-              <View style={styles.reviewStars}>
-                {[1, 2, 3, 4, 5].map((star) => (
                   <Pressable
-                    key={star}
-                    disabled={reviewWorking}
-                    onPress={() => setReviewRating(star)}
-                    hitSlop={8}
+                    onPress={() => {
+                      setReviewComplete(null);
+                      setSelectedService(null);
+                      setServiceQuery('');
+                      setIssue('');
+                    }}
+                    style={styles.reviewSubmit}
                   >
-                    <Text style={[
-                      styles.reviewStar,
-                      star <= reviewRating && styles.reviewStarActive,
-                    ]}>
-                      ★
+                    <Text style={styles.reviewSubmitText}>Need another service</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setReviewComplete(null)} style={styles.reviewLater}>
+                    <Text style={styles.reviewLaterText}>Done</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <View style={styles.reviewSuccessIcon}>
+                    <Text style={styles.reviewSuccessIconText}>✓</Text>
+                  </View>
+
+                  <Text style={styles.reviewKicker}>SERVICE COMPLETED</Text>
+                  <Text style={styles.reviewTitle}>How did it go?</Text>
+                  <Text style={styles.reviewProvider}>
+                    {pendingReview?.provider_name || 'Your provider'}
+                  </Text>
+                  <Text style={styles.reviewService}>
+                    {pendingReview?.service || 'Service'}
+                  </Text>
+
+                  <View style={styles.reviewStars}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <Pressable
+                        key={star}
+                        disabled={reviewWorking}
+                        onPress={() => setReviewRating(star)}
+                        hitSlop={8}
+                      >
+                        <Text style={[
+                          styles.reviewStar,
+                          star <= reviewRating && styles.reviewStarActive,
+                        ]}>
+                          ★
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  <TextInput
+                    value={reviewComment}
+                    onChangeText={setReviewComment}
+                    placeholder="Optional: tell others about your experience"
+                    placeholderTextColor="#9B9E96"
+                    style={styles.reviewInput}
+                    multiline
+                    maxLength={1000}
+                    textAlignVertical="top"
+                  />
+
+                  <Pressable
+                    disabled={reviewWorking || reviewRating < 1}
+                    onPress={() => void submitReview()}
+                    style={({ pressed }) => [
+                      styles.reviewSubmit,
+                      (pressed || reviewWorking || reviewRating < 1) && { opacity: 0.55 },
+                    ]}
+                  >
+                    <Text style={styles.reviewSubmitText}>
+                      {reviewWorking ? 'Submitting…' : 'Submit review'}
                     </Text>
                   </Pressable>
-                ))}
-              </View>
 
-              <TextInput
-                value={reviewComment}
-                onChangeText={setReviewComment}
-                placeholder="Optional: tell others about your experience"
-                placeholderTextColor="#9B9E96"
-                style={styles.reviewInput}
-                multiline
-                maxLength={1000}
-                textAlignVertical="top"
-              />
-
-              <Pressable
-                disabled={reviewWorking || reviewRating < 1}
-                onPress={() => void submitReview()}
-                style={({ pressed }) => [
-                  styles.reviewSubmit,
-                  (pressed || reviewWorking || reviewRating < 1) && { opacity: 0.55 },
-                ]}
-              >
-                <Text style={styles.reviewSubmitText}>
-                  {reviewWorking ? 'Submitting…' : 'Submit review'}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                disabled={reviewWorking}
-                onPress={() => {
-                  if (pendingReview) {
-                    setDismissedReviewIds((current) => [...new Set([...current, pendingReview.id])]);
-                  }
-                }}
-                style={styles.reviewLater}
-              >
-                <Text style={styles.reviewLaterText}>Not now</Text>
-              </Pressable>
+                  <Pressable
+                    disabled={reviewWorking}
+                    onPress={() => {
+                      if (pendingReview) {
+                        setDismissedReviewIds((current) => [...new Set([...current, pendingReview.id])]);
+                      }
+                    }}
+                    style={styles.reviewLater}
+                  >
+                    <Text style={styles.reviewLaterText}>Not now</Text>
+                  </Pressable>
+                </>
+              )}
             </View>
           </View>
         </Modal>
