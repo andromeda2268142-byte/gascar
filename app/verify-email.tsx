@@ -14,7 +14,7 @@ import { getSupabaseClient } from '@/lib/supabase';
 
 export default function VerifyEmailScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ email?: string }>();
+  const params = useLocalSearchParams<{ email?: string; status?: string }>();
   const email = useMemo(() => (params.email ?? '').trim().toLowerCase(), [params.email]);
 
   const [resending, setResending] = useState(false);
@@ -58,7 +58,7 @@ export default function VerifyEmailScreen() {
       params: {
         email,
         mode: 'signin',
-        verified: '1',
+        confirmation: 'check',
       },
     });
   }
@@ -75,10 +75,12 @@ export default function VerifyEmailScreen() {
         </View>
 
         <Text style={styles.kicker}>VERIFY YOUR EMAIL</Text>
-        <Text style={styles.title}>Check your inbox.</Text>
+        <Text style={styles.title}>{params.status === 'pending' ? 'Email still not confirmed.' : 'Check your inbox.'}</Text>
 
         <Text style={styles.subtitle}>
-          We sent a confirmation email to
+          {params.status === 'pending'
+            ? 'Supabase still reports this account as unconfirmed. Open the confirmation email and tap the confirmation link for'
+            : 'We sent a confirmation email to'}
         </Text>
         <Text style={styles.email}>{email || 'your email address'}</Text>
 
@@ -113,7 +115,7 @@ export default function VerifyEmailScreen() {
         </View>
 
         <Pressable onPress={continueToSignIn} style={styles.primaryButton}>
-          <Text style={styles.primaryButtonText}>I confirmed my email</Text>
+          <Text style={styles.primaryButtonText}>Try signing in</Text>
         </Pressable>
 
         <Pressable
@@ -131,9 +133,9 @@ export default function VerifyEmailScreen() {
         </Pressable>
 
         <View style={styles.note}>
-          <Text style={styles.noteTitle}>Why no 6-digit code?</Text>
+          <Text style={styles.noteTitle}>Important</Text>
           <Text style={styles.noteText}>
-            This Supabase project currently verifies new accounts with a confirmation link. The app now matches the email you actually receive.
+            Tapping “Try signing in” does not mark the account as verified. The email must be confirmed by Supabase through the link in your inbox.
           </Text>
         </View>
       </View>
