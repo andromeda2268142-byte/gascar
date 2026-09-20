@@ -100,8 +100,12 @@ export default function ProfileScreen() {
           <Pressable onPress={() => router.push('/business')} style={styles.businessPortal}>
             <View style={styles.businessPortalIcon}><Text style={styles.businessPortalIconText}>B</Text></View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.businessPortalTitle}>Business Portal</Text>
-              <Text style={styles.businessPortalText}>Set the services you offer and choose Shop, Mobile or Both.</Text>
+              <Text style={styles.businessPortalTitle}>{role === 'business' ? 'Business Portal' : 'Add your business'}</Text>
+              <Text style={styles.businessPortalText}>
+                {role === 'business'
+                  ? 'Manage your provider profile, services and matched leads.'
+                  : 'Own an automotive business? Add it to this account without creating another login.'}
+              </Text>
             </View>
             <Text style={styles.chevron}>›</Text>
           </Pressable>
