@@ -207,8 +207,17 @@ export default function RequestScreen() {
   );
 
   const searchResults = useMemo(
-    () => filterServices(categoryServices, serviceQuery).slice(0, 10),
+    () => filterServices(categoryServices, serviceQuery)
+      .filter((item) => !item.slug.startsWith('other-'))
+      .slice(0, 10),
     [categoryServices, serviceQuery],
+  );
+
+  const otherService = useMemo(
+    () => categoryServices.find((item) =>
+      item.slug === (category === 'repair' ? 'other-repair' : 'other-roadside'),
+    ) ?? null,
+    [category, categoryServices],
   );
 
   function changeCategory(next: ServiceCategory) {
@@ -411,9 +420,6 @@ export default function RequestScreen() {
         >
           <Text style={styles.kicker}>REQUEST SERVICE</Text>
           <Text style={styles.title}>What does your car need?</Text>
-          <Text style={styles.subtitle}>
-            Choose the exact service so your request only reaches businesses that actually offer it.
-          </Text>
 
           <View style={styles.segment}>
             <Pressable
@@ -428,18 +434,6 @@ export default function RequestScreen() {
             >
               <Text style={[styles.segmentText, category === 'towing' && styles.segmentTextActive]}>Roadside / towing</Text>
             </Pressable>
-          </View>
-
-          <View style={styles.heroCard}>
-            <Text style={styles.heroIcon}>{category === 'repair' ? '🔧' : '🚚'}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.heroTitle}>
-                {category === 'repair' ? 'Find the right mechanic' : 'Get roadside help'}
-              </Text>
-              <Text style={styles.heroText}>
-                Matching uses both the selected service and where the service needs to happen.
-              </Text>
-            </View>
           </View>
 
           {user && currentCase ? (
@@ -548,53 +542,7 @@ export default function RequestScreen() {
             </View>
           ) : null}
 
-          {user && myRequests.filter((request) => request.id !== currentCase?.id).length ? (
-            <View style={styles.historyWrap}>
-              <Text style={styles.historyTitle}>Recent services</Text>
-              {myRequests
-                .filter((request) => request.id !== currentCase?.id)
-                .slice(0, 3)
-                .map((request) => (
-                  <View key={request.id} style={styles.historyRow}>
-                    <Pressable
-                      disabled={!request.accepted_business_id}
-                      onPress={() => request.accepted_business_id
-                        ? router.push({ pathname: '/lead-chat', params: { leadId: request.id } })
-                        : undefined}
-                      style={styles.historyMain}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.historyService}>{request.service || 'Service request'}</Text>
-                        <Text style={styles.historyMeta}>
-                          {request.status.replaceAll('_', ' ')} · {new Date(request.created_at).toLocaleDateString()}
-                        </Text>
-                        {request.customer_archived_at ? (
-                          <Text style={styles.historyHidden}>Hidden from current service</Text>
-                        ) : null}
-                      </View>
-                      {request.accepted_business_id ? <Text style={styles.historyArrow}>›</Text> : null}
-                    </Pressable>
-
-                    {request.customer_archived_at && ['accepted', 'in_progress'].includes(request.status) ? (
-                      <Pressable
-                        disabled={caseArchiveWorking === request.id}
-                        onPress={() => void setCaseArchived(request, false)}
-                        style={({ pressed }) => [
-                          styles.restoreButton,
-                          (pressed || caseArchiveWorking === request.id) && { opacity: 0.6 },
-                        ]}
-                      >
-                        <Text style={styles.restoreButtonText}>
-                          {caseArchiveWorking === request.id ? '…' : 'Show again'}
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-                ))}
-            </View>
-          ) : null}
-
-          <SectionTitle title="Choose a service" right={loadingServices ? 'Loading…' : String(categoryServices.length) + ' available'} />
+          <SectionTitle title="Find your service" right={loadingServices ? 'Loading…' : undefined} />
           <Card style={styles.serviceCard}>
             <View style={styles.searchWrap}>
               <Text style={styles.searchIcon}>⌕</Text>
@@ -630,29 +578,64 @@ export default function RequestScreen() {
                   <Text style={styles.selectedName}>{selectedService.name}</Text>
                   {selectedService.description ? <Text style={styles.selectedDescription}>{selectedService.description}</Text> : null}
                 </View>
-                <Text style={styles.selectedCheck}>✓</Text>
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => {
+                    setSelectedService(null);
+                    setServiceQuery('');
+                  }}
+                >
+                  <Text style={styles.selectedChange}>Change</Text>
+                </Pressable>
               </View>
             ) : (
-              <View style={styles.results}>
-                {searchResults.length ? (
-                  searchResults.map((item) => (
-                    <Pressable key={item.id} onPress={() => chooseService(item)} style={styles.resultRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.resultName}>{item.name}</Text>
-                        <Text style={styles.resultMeta}>
-                          {(item.group_name || 'Service') + (item.description ? ' · ' + item.description : '')}
-                        </Text>
+              <>
+                {serviceQuery.trim().length >= 2 ? (
+                  <View style={styles.results}>
+                    {searchResults.length ? (
+                      searchResults.map((item) => (
+                        <Pressable key={item.id} onPress={() => chooseService(item)} style={styles.resultRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.resultName}>{item.name}</Text>
+                            <Text style={styles.resultMeta}>
+                              {(item.group_name || 'Service') + (item.description ? ' · ' + item.description : '')}
+                            </Text>
+                          </View>
+                          <Text style={styles.resultArrow}>›</Text>
+                        </Pressable>
+                      ))
+                    ) : (
+                      <View style={styles.noResults}>
+                        <Text style={styles.noResultsTitle}>No close match yet</Text>
+                        <Text style={styles.noResultsText}>Keep typing or choose Other below. Small spelling mistakes are okay.</Text>
                       </View>
-                      <Text style={styles.resultArrow}>›</Text>
-                    </Pressable>
-                  ))
+                    )}
+                  </View>
                 ) : (
-                  <View style={styles.noResults}>
-                    <Text style={styles.noResultsTitle}>No matching service</Text>
-                    <Text style={styles.noResultsText}>Try another word, such as “brake”, “battery”, “AC” or “tow”.</Text>
+                  <View style={styles.searchHint}>
+                    <Text style={styles.searchHintTitle}>Start typing the problem</Text>
+                    <Text style={styles.searchHintText}>Examples: brake noise, overheating, battery, vibration, window, AC, transmission…</Text>
                   </View>
                 )}
-              </View>
+
+                {otherService ? (
+                  <Pressable
+                    onPress={() => chooseService(otherService)}
+                    style={styles.otherServiceButton}
+                  >
+                    <View style={styles.otherServiceIcon}><Text style={styles.otherServiceIconText}>?</Text></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.otherServiceTitle}>
+                        {category === 'repair' ? "Other / I'm not sure what's wrong" : 'Other roadside problem'}
+                      </Text>
+                      <Text style={styles.otherServiceText}>
+                        Describe what you notice and we’ll route it to providers that accept general diagnosis.
+                      </Text>
+                    </View>
+                    <Text style={styles.resultArrow}>›</Text>
+                  </Pressable>
+                ) : null}
+              </>
             )}
           </Card>
           {errors.service ? <Text style={styles.fieldError}>{errors.service}</Text> : null}
@@ -827,16 +810,11 @@ const styles = StyleSheet.create({
   content: { padding: 18, paddingBottom: 130 },
   kicker: { color: colors.coral, fontSize: 11, fontWeight: '950', letterSpacing: 1.6 },
   title: { marginTop: 5, color: colors.ink, fontSize: 32, lineHeight: 35, fontWeight: '950', letterSpacing: -1.3 },
-  subtitle: { marginTop: 10, fontSize: 14, lineHeight: 21, color: colors.muted },
   segment: { marginTop: 20, padding: 5, borderRadius: 16, backgroundColor: '#ECE9DF', flexDirection: 'row', gap: 5 },
   segmentButton: { flex: 1, minHeight: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8 },
   segmentActive: { backgroundColor: colors.ink },
   segmentText: { color: colors.muted, fontSize: 11, fontWeight: '900', textAlign: 'center' },
   segmentTextActive: { color: colors.white },
-  heroCard: { marginVertical: 18, backgroundColor: colors.limeSoft, borderRadius: 24, padding: 17, flexDirection: 'row', gap: 13, borderWidth: 1, borderColor: '#DBEABF' },
-  heroIcon: { fontSize: 26 },
-  heroTitle: { color: colors.ink, fontSize: 16, fontWeight: '900' },
-  heroText: { marginTop: 4, color: colors.muted, lineHeight: 18, fontSize: 12 },
   caseWrap: { marginBottom: 20, borderRadius: 24, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 17 },
   caseHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   caseKicker: { color: colors.coral, fontSize: 8.5, fontWeight: '950', letterSpacing: 1.1 },
@@ -868,16 +846,6 @@ const styles = StyleSheet.create({
   hideCaseButton: { minHeight: 42, borderRadius: 13, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAF9F5', paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch' },
   hideCaseButtonText: { color: colors.ink, fontSize: 9.5, fontWeight: '900' },
   hideCaseHelp: { color: colors.muted, fontSize: 8.5, marginTop: 6 },
-  historyWrap: { marginBottom: 20 },
-  historyTitle: { color: colors.ink, fontSize: 14, fontWeight: '950', marginBottom: 8 },
-  historyRow: { minHeight: 58, borderRadius: 15, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  historyMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 },
-  historyService: { color: colors.ink, fontSize: 11, fontWeight: '900' },
-  historyMeta: { color: colors.muted, fontSize: 8.5, marginTop: 3, textTransform: 'capitalize' },
-  historyHidden: { color: colors.coral, fontSize: 8, fontWeight: '900', marginTop: 3 },
-  historyArrow: { color: '#A3A59E', fontSize: 22 },
-  restoreButton: { minHeight: 34, borderRadius: 11, backgroundColor: colors.ink, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
-  restoreButtonText: { color: colors.lime, fontSize: 8.5, fontWeight: '950' },
   messageFab: { position: 'absolute', right: 20, bottom: 92, width: 58, height: 58, borderRadius: 29, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 7 },
   messageFabIcon: { color: colors.lime, fontSize: 21, fontWeight: '950' },
   messageFabBadge: { position: 'absolute', right: -2, top: -3, minWidth: 20, height: 20, borderRadius: 10, backgroundColor: colors.coral, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.background },
@@ -896,10 +864,18 @@ const styles = StyleSheet.create({
   selectedLabel: { color: colors.coral, fontSize: 8.5, fontWeight: '950', letterSpacing: 0.8 },
   selectedName: { color: colors.ink, fontSize: 15, fontWeight: '950', marginTop: 3 },
   selectedDescription: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
-  selectedCheck: { color: colors.coral, fontSize: 20, fontWeight: '950' },
-  noResults: { paddingVertical: 18, paddingHorizontal: 5 },
-  noResultsTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  noResultsText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
+  selectedChange: { color: colors.coral, fontSize: 9.5, fontWeight: '950' },
+  noResults: { paddingVertical: 15, paddingHorizontal: 5 },
+  noResultsTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  noResultsText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
+  searchHint: { paddingVertical: 16, paddingHorizontal: 5 },
+  searchHintTitle: { color: colors.ink, fontSize: 11.5, fontWeight: '900' },
+  searchHintText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 4 },
+  otherServiceButton: { marginTop: 8, minHeight: 70, borderRadius: 16, backgroundColor: '#F2F0E9', borderWidth: 1, borderColor: colors.line, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  otherServiceIcon: { width: 34, height: 34, borderRadius: 12, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+  otherServiceIconText: { color: colors.lime, fontSize: 15, fontWeight: '950' },
+  otherServiceTitle: { color: colors.ink, fontSize: 10.5, fontWeight: '950' },
+  otherServiceText: { color: colors.muted, fontSize: 8.8, lineHeight: 13, marginTop: 3 },
   sectionGap: { marginTop: 21 },
   locationList: { gap: 9 },
   locationChoice: { minHeight: 76, borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 13, flexDirection: 'row', gap: 12, alignItems: 'center' },
