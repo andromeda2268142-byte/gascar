@@ -47,7 +47,7 @@ const modes: Array<{ value: BusinessServiceMode; label: string }> = [
 
 export default function BusinessScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [business, setBusiness] = useState<Business | null>(null);
   const [businessName, setBusinessName] = useState('');
   const [businessType, setBusinessType] = useState<'mechanic' | 'towing' | 'parts'>('mechanic');
@@ -143,6 +143,11 @@ export default function BusinessScreen() {
     () => filterServices(catalog, serviceSearch),
     [catalog, serviceSearch],
   );
+
+  async function logout() {
+    await signOut();
+    router.replace('/auth');
+  }
 
   async function createBusiness() {
     if (!user) {
@@ -281,7 +286,10 @@ export default function BusinessScreen() {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <ScrollView contentContainerStyle={styles.content}>
-          <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Back</Text></Pressable>
+          <View style={styles.topActions}>
+            <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Back</Text></Pressable>
+            <Pressable onPress={() => void logout()}><Text style={styles.signOut}>Sign out</Text></Pressable>
+          </View>
           <Text style={styles.kicker}>BUSINESS PORTAL</Text>
           <Text style={styles.title}>Set up your business.</Text>
           <Text style={styles.subtitle}>Complete the provider profile. It will remain pending until an administrator approves the business.</Text>
@@ -343,7 +351,10 @@ export default function BusinessScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Back</Text></Pressable>
+        <View style={styles.topActions}>
+          <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Back</Text></Pressable>
+          <Pressable onPress={() => void logout()}><Text style={styles.signOut}>Sign out</Text></Pressable>
+        </View>
 
         <View style={styles.businessHeader}>
           <View style={{ flex: 1 }}>
@@ -458,7 +469,9 @@ const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   centerContent: { flex: 1, padding: 22, justifyContent: 'center' },
   content: { padding: 18, paddingBottom: 50 },
-  back: { color: colors.muted, fontWeight: '800', fontSize: 13, marginBottom: 22 },
+  topActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 },
+  back: { color: colors.muted, fontWeight: '800', fontSize: 13 },
+  signOut: { color: colors.coral, fontWeight: '900', fontSize: 12 },
   kicker: { color: colors.coral, fontSize: 11, fontWeight: '950', letterSpacing: 1.6 },
   title: { marginTop: 6, color: colors.ink, fontSize: 32, lineHeight: 35, fontWeight: '950', letterSpacing: -1.3 },
   subtitle: { color: colors.muted, marginTop: 8, fontSize: 13, lineHeight: 19 },
