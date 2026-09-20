@@ -86,7 +86,10 @@ export default function LeadChatScreen() {
       if (messagesError) throw messagesError;
       setMessages((rows ?? []) as Message[]);
 
-      await supabase.rpc('gascars_mark_lead_messages_seen', { p_lead_id: leadId });
+      await Promise.all([
+        supabase.rpc('gascars_mark_lead_messages_seen', { p_lead_id: leadId }),
+        supabase.rpc('gascars_mark_lead_notifications_read', { p_lead_id: leadId }),
+      ]);
       setError(null);
     } catch (err) {
       if (!silent) setError(err instanceof Error ? err.message : 'Could not load conversation.');
