@@ -416,8 +416,8 @@ export default function ProviderLeadsScreen() {
                 <View style={styles.contactCard}>
                   <Text style={styles.contactKicker}>CUSTOMER</Text>
                   <Text style={styles.contactName}>{contact?.contact_name || 'Customer'}</Text>
-                  {contact?.contact_phone ? <Text style={styles.contactLine}>Phone · {contact.contact_phone}</Text> : null}
-                  {contact?.contact_email ? <Text style={styles.contactLine}>Email · {contact.contact_email}</Text> : null}
+                  {preferredMethods.includes('phone') && contact?.contact_phone ? <Text style={styles.contactLine}>Phone · {contact.contact_phone}</Text> : null}
+                  {preferredMethods.includes('email') && contact?.contact_email ? <Text style={styles.contactLine}>Email · {contact.contact_email}</Text> : null}
                   {(contact?.pickup_address || lead.pickup_address) ? <Text style={styles.contactLine}>Pickup · {contact?.pickup_address || lead.pickup_address}</Text> : null}
                   {(contact?.destination_address || lead.destination_address) ? <Text style={styles.contactLine}>Destination · {contact?.destination_address || lead.destination_address}</Text> : null}
                   <Text style={styles.preferredContact}>
