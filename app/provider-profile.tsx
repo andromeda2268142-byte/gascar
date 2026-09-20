@@ -41,6 +41,7 @@ export default function ProviderProfileScreen() {
   const [services, setServices] = useState<string[]>([]);
   const [serviceModes, setServiceModes] = useState<string[]>([]);
   const [completedJobs, setCompletedJobs] = useState(0);
+  const [reviewCount, setReviewCount] = useState(0);
   const [publicAverage, setPublicAverage] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -101,6 +102,7 @@ export default function ProviderProfileScreen() {
       if (!statsResult.error) {
         const stats = Array.isArray(statsResult.data) ? statsResult.data[0] : statsResult.data;
         setCompletedJobs(Number(stats?.completed_jobs ?? 0));
+        setReviewCount(Number(stats?.review_count ?? 0));
         setPublicAverage(stats?.average_rating == null ? null : Number(stats.average_rating));
       }
 
@@ -216,12 +218,12 @@ export default function ProviderProfileScreen() {
           <View style={styles.ratingMain}>
             <Text style={styles.ratingKicker}>GAS CAR'S REPUTATION</Text>
             <View style={styles.ratingRow}>
-              <Text style={styles.ratingValue}>{reviews.length ? average.toFixed(1) : '—'}</Text>
+              <Text style={styles.ratingValue}>{reviewCount ? average.toFixed(1) : '—'}</Text>
               <Text style={styles.ratingStar}>★</Text>
             </View>
             <Text style={styles.ratingCount}>
-              {reviews.length
-                ? reviews.length + (reviews.length === 1 ? ' verified review' : ' verified reviews')
+              {reviewCount
+                ? reviewCount + (reviewCount === 1 ? ' verified review' : ' verified reviews')
                 : 'No reviews yet'}
             </Text>
           </View>
