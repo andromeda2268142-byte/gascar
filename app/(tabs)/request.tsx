@@ -598,11 +598,22 @@ export default function RequestScreen() {
                 </View>
               </View>
 
-              <Text style={styles.caseProvider}>
-                {currentCase.accepted_business_id
-                  ? currentCase.provider_name || 'Matched provider'
-                  : 'Searching for a matching provider'}
-              </Text>
+              {currentCase.accepted_business_id ? (
+                <Pressable
+                  onPress={() => router.push({
+                    pathname: '/provider-profile',
+                    params: { businessId: currentCase.accepted_business_id },
+                  })}
+                  style={styles.providerProfileLink}
+                >
+                  <Text style={styles.caseProvider}>
+                    {currentCase.provider_name || 'Matched provider'}
+                  </Text>
+                  <Text style={styles.providerProfileLinkText}>View profile ›</Text>
+                </Pressable>
+              ) : (
+                <Text style={styles.caseProvider}>Searching for a matching provider</Text>
+              )}
 
               <View style={styles.progressTrack}>
                 {[
@@ -1053,7 +1064,9 @@ const styles = StyleSheet.create({
   caseHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   caseKicker: { color: colors.coral, fontSize: 8.5, fontWeight: '950', letterSpacing: 1.1 },
   caseTitle: { color: colors.ink, fontSize: 20, lineHeight: 24, fontWeight: '950', marginTop: 3 },
-  caseProvider: { color: colors.muted, fontSize: 10.5, fontWeight: '800', marginTop: 5 },
+  caseProvider: { color: colors.muted, fontSize: 10.5, fontWeight: '800' },
+  providerProfileLink: { marginTop: 5, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7 },
+  providerProfileLinkText: { color: colors.coral, fontSize: 8.5, fontWeight: '950' },
   caseStatus: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   caseStatusWaiting: { backgroundColor: colors.sunSoft },
   caseStatusAccepted: { backgroundColor: colors.violetSoft },
