@@ -42,7 +42,7 @@ type Contact = {
   preferred_contact_methods: Array<'app' | 'phone' | 'email'>;
 };
 
-type Filter = 'available' | 'active' | 'completed';
+type Filter = 'available' | 'active' | 'completed' | 'cancelled';
 type Notice = {
   kind: 'error' | 'success' | 'info';
   title: string;
@@ -233,7 +233,8 @@ export default function ProviderLeadsScreen() {
   const visibleLeads = useMemo(() => {
     if (filter === 'available') return leads.filter((lead) => lead.status === 'open');
     if (filter === 'active') return leads.filter((lead) => ['accepted', 'in_progress'].includes(lead.status));
-    return leads.filter((lead) => lead.status === 'completed');
+    if (filter === 'completed') return leads.filter((lead) => lead.status === 'completed');
+    return leads.filter((lead) => lead.status === 'cancelled');
   }, [filter, leads]);
 
   async function acceptLead(lead: Lead) {
@@ -377,6 +378,7 @@ export default function ProviderLeadsScreen() {
             ['available', 'Available'],
             ['active', 'Active jobs'],
             ['completed', 'Completed'],
+            ['cancelled', 'Cancelled'],
           ] as Array<[Filter, string]>).map(([value, label]) => (
             <Pressable key={value} onPress={() => setFilter(value)} style={[styles.filterButton, filter === value && styles.filterButtonActive]}>
               <Text style={[styles.filterText, filter === value && styles.filterTextActive]}>{label}</Text>
@@ -399,7 +401,14 @@ export default function ProviderLeadsScreen() {
                   <Text style={styles.leadService}>{lead.service || 'Service request'}</Text>
                   <Text style={styles.leadMeta}>ZIP {lead.zip || '—'} · {serviceModeLabel(lead.service_location)} · {lead.credit_cost} credits</Text>
                 </View>
-                <View style={[styles.statusPill, lead.status === 'open' ? styles.statusOpen : styles.statusActive]}>
+                <View style={[
+                  styles.statusPill,
+                  lead.status === 'open'
+                    ? styles.statusOpen
+                    : lead.status === 'cancelled'
+                      ? styles.statusCancelled
+                      : styles.statusActive,
+                ]}>
                   <Text style={styles.statusText}>{lead.status.replaceAll('_', ' ').toUpperCase()}</Text>
                 </View>
               </View>
@@ -407,7 +416,12 @@ export default function ProviderLeadsScreen() {
               <Text style={styles.issue}>{lead.issue_description}</Text>
               {lead.preferred_time ? <Text style={styles.detail}>Preferred time: {lead.preferred_time}</Text> : null}
 
-              {lead.status === 'open' ? (
+              {lead.status === 'cancelled' ? (
+                <View style={styles.cancelledCard}>
+                  <Text style={styles.cancelledTitle}>Customer cancelled this service</Text>
+                  <Text style={styles.cancelledText}>No further action is required. This request remains here as a record.</Text>
+                </View>
+              ) : lead.status === 'open' ? (
                 <View style={styles.lockedContact}>
                   <Text style={styles.lockedTitle}>Customer contact is locked</Text>
                   <Text style={styles.lockedText}>Accepting the lead unlocks the customer details for your business.</Text>
@@ -505,7 +519,13 @@ export default function ProviderLeadsScreen() {
         }) : (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyTitle}>
-              {filter === 'available' ? 'No available matched leads' : filter === 'active' ? 'No active jobs' : 'No completed jobs yet'}
+              {filter === 'available'
+                ? 'No available matched leads'
+                : filter === 'active'
+                  ? 'No active jobs'
+                  : filter === 'completed'
+                    ? 'No completed jobs yet'
+                    : 'No cancelled jobs'}
             </Text>
             <Text style={styles.emptyText}>
               {activeBusiness
@@ -562,9 +582,13 @@ const styles = StyleSheet.create({
   statusPill: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 5 },
   statusOpen: { backgroundColor: colors.coralSoft },
   statusActive: { backgroundColor: colors.limeSoft },
+  statusCancelled: { backgroundColor: '#F4DDD7' },
   statusText: { color: colors.ink, fontSize: 7.5, fontWeight: '950' },
   issue: { color: colors.ink, fontSize: 11.5, lineHeight: 17, marginTop: 13 },
   detail: { color: colors.muted, fontSize: 9.5, marginTop: 6 },
+  cancelledCard: { marginTop: 13, borderRadius: 14, backgroundColor: '#FFF1ED', borderWidth: 1, borderColor: '#F1B1A2', padding: 12 },
+  cancelledTitle: { color: '#B84A34', fontSize: 10.5, fontWeight: '950' },
+  cancelledText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
   lockedContact: { marginTop: 13, borderRadius: 14, backgroundColor: '#F2F0E9', padding: 12 },
   lockedTitle: { color: colors.ink, fontSize: 10.5, fontWeight: '900' },
   lockedText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
