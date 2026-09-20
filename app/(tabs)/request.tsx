@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -1192,7 +1193,8 @@ export default function RequestScreen() {
                 <Text style={styles.successButtonText}>View live status</Text>
               </Pressable>
             </View>
-          </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </Modal>
 
         <Modal
@@ -1207,7 +1209,16 @@ export default function RequestScreen() {
             }
           }}
         >
-          <View style={styles.reviewOverlay}>
+          <KeyboardAvoidingView
+            style={styles.reviewKeyboardArea}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <ScrollView
+              contentContainerStyle={styles.reviewOverlay}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              showsVerticalScrollIndicator={false}
+            >
             <View style={styles.reviewCard}>
               {reviewComplete ? (
                 <>
@@ -1280,7 +1291,14 @@ export default function RequestScreen() {
                     multiline
                     maxLength={1000}
                     textAlignVertical="top"
+                    returnKeyType="done"
+                    blurOnSubmit
+                    onSubmitEditing={() => Keyboard.dismiss()}
                   />
+
+                  <Pressable onPress={() => Keyboard.dismiss()} style={styles.reviewKeyboardDone}>
+                    <Text style={styles.reviewKeyboardDoneText}>Done typing</Text>
+                  </Pressable>
 
                   <Pressable
                     disabled={reviewWorking || reviewRating < 1}
@@ -1453,7 +1471,8 @@ const styles = StyleSheet.create({
   successTimelineTextMuted: { color: colors.muted, fontSize: 8.5, fontWeight: '900', marginLeft: 6 },
   successButton: { width: '100%', minHeight: 50, borderRadius: 15, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', marginTop: 15 },
   successButtonText: { color: colors.lime, fontSize: 11, fontWeight: '950' },
-  reviewOverlay: { flex: 1, backgroundColor: 'rgba(24, 26, 22, 0.48)', alignItems: 'center', justifyContent: 'center', padding: 22 },
+  reviewKeyboardArea: { flex: 1 },
+  reviewOverlay: { flexGrow: 1, backgroundColor: 'rgba(24, 26, 22, 0.48)', alignItems: 'center', justifyContent: 'center', padding: 22, paddingVertical: 34 },
   reviewCard: { width: '100%', maxWidth: 470, borderRadius: 26, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 20, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 10 },
   reviewSuccessIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: colors.limeSoft, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   reviewSuccessIconText: { color: colors.ink, fontSize: 25, fontWeight: '950' },
@@ -1466,6 +1485,8 @@ const styles = StyleSheet.create({
   reviewStar: { color: '#D7D5CE', fontSize: 36, lineHeight: 40 },
   reviewStarActive: { color: '#F5B63D' },
   reviewInput: { width: '100%', minHeight: 94, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: '#F8F7F2', paddingHorizontal: 13, paddingTop: 12, paddingBottom: 12, color: colors.ink, fontSize: 11.5 },
+  reviewKeyboardDone: { alignSelf: 'flex-end', minHeight: 34, justifyContent: 'center', paddingHorizontal: 4, marginTop: 4 },
+  reviewKeyboardDoneText: { color: colors.coral, fontSize: 9.5, fontWeight: '950' },
   reviewSubmit: { width: '100%', minHeight: 50, borderRadius: 15, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   reviewSubmitText: { color: colors.lime, fontSize: 11.5, fontWeight: '950' },
   reviewLater: { minHeight: 38, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
