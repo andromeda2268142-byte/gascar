@@ -21,7 +21,7 @@ type AccountType = 'driver' | 'business';
 
 export default function AuthScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ email?: string; mode?: Mode; verified?: string }>();
+  const params = useLocalSearchParams<{ email?: string; mode?: Mode; confirmation?: string }>();
   const [mode, setMode] = useState<Mode>(params.mode === 'signup' ? 'signup' : 'signin');
   const [accountType, setAccountType] = useState<AccountType>('driver');
   const [name, setName] = useState('');
@@ -73,7 +73,17 @@ export default function AuthScreen() {
           email: email.trim().toLowerCase(),
           password,
         });
-        if (error) throw error;
+
+        if (error) {
+          if (error.message.toLowerCase().includes('email not confirmed')) {
+            router.replace({
+              pathname: '/verify-email',
+              params: { email: email.trim().toLowerCase(), status: 'pending' },
+            });
+            return;
+          }
+          throw error;
+        }
 
         const { data: profile } = await supabase
           .from('gascars_profiles')
@@ -129,10 +139,10 @@ export default function AuthScreen() {
                 : 'Create a driver account to save vehicles, request help and personalize Gas Car’s.'}
           </Text>
 
-          {params.verified === '1' ? (
+          {params.confirmation === 'check' ? (
             <View style={styles.verifiedNotice}>
-              <Text style={styles.verifiedTitle}>Email confirmed</Text>
-              <Text style={styles.verifiedText}>Sign in with the password you created to continue.</Text>
+              <Text style={styles.verifiedTitle}>Ready to check your account</Text>
+              <Text style={styles.verifiedText}>Sign in below. Gas Car’s will only continue if Supabase confirms that your email has actually been verified.</Text>
             </View>
           ) : null}
 
