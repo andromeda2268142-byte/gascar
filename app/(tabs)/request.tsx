@@ -274,7 +274,7 @@ export default function RequestScreen() {
     if (archived) {
       Alert.alert(
         'Hide this service?',
-        'This only removes the progress card from your active view. It does not mark the job completed, cancel the mechanic, or delete the conversation. You can restore it from Recent services.',
+        'This only removes the progress card from your active view. It does not mark the job completed, cancel the mechanic, or delete the conversation. You can restore it from My Account → Service history.',
         [
           { text: 'Keep showing', style: 'cancel' },
           {
