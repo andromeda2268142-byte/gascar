@@ -51,5 +51,9 @@ export default function Index() {
     return <Redirect href="/admin" />;
   }
 
+  if (user && role === 'business') {
+    return <Redirect href="/business" />;
+  }
+
   return <Redirect href="/(tabs)" />;
 }
