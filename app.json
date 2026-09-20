@@ -21,7 +21,15 @@
       "bundler": "metro",
       "output": "static"
     },
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Gas Car's usa tu ubicación para mostrar gasolina y servicios cercanos."
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true
     }

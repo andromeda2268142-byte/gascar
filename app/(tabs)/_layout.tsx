@@ -3,7 +3,7 @@ import { Text } from 'react-native';
 import { colors } from '@/constants/theme';
 
 const icon = (symbol: string, active: boolean) => (
-  <Text style={{ fontSize: 19, opacity: active ? 1 : 0.65 }}>{symbol}</Text>
+  <Text style={{ fontSize: 19, opacity: active ? 1 : 0.58, color: active ? colors.lime : '#A5A79F' }}>{symbol}</Text>
 );
 
 export default function TabsLayout() {
@@ -11,7 +11,7 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.ink,
+        tabBarActiveTintColor: colors.lime,
         tabBarInactiveTintColor: '#A5A79F',
         tabBarStyle: {
           height: 72,
@@ -28,10 +28,10 @@ export default function TabsLayout() {
         tabBarItemStyle: { borderRadius: 16 },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Explore', tabBarIcon: ({ focused }) => icon('⌖', focused) }} />
-      <Tabs.Screen name="request" options={{ title: 'Request', tabBarIcon: ({ focused }) => icon('＋', focused) }} />
-      <Tabs.Screen name="garage" options={{ title: 'Garage', tabBarIcon: ({ focused }) => icon('▰', focused) }} />
-      <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarIcon: ({ focused }) => icon('●', focused) }} />
+      <Tabs.Screen name="index" options={{ title: 'Explorar', tabBarIcon: ({ focused }) => icon('⌖', focused) }} />
+      <Tabs.Screen name="request" options={{ title: 'Solicitar', tabBarIcon: ({ focused }) => icon('＋', focused) }} />
+      <Tabs.Screen name="garage" options={{ title: 'Garaje', tabBarIcon: ({ focused }) => icon('▰', focused) }} />
+      <Tabs.Screen name="profile" options={{ title: 'Mi cuenta', tabBarIcon: ({ focused }) => icon('●', focused) }} />
     </Tabs>
   );
 }
