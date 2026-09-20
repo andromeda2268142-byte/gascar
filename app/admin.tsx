@@ -297,12 +297,17 @@ export default function AdminScreen() {
     );
   }, [leads, search]);
 
-  async function runAction(id: string, action: () => Promise<{ error: any }>) {
+  async function runAction(
+    id: string,
+    action: () => Promise<{ error: any }>,
+    successMessage?: string,
+  ) {
     setWorkingId(id);
     try {
       const { error } = await action();
       if (error) throw error;
       await loadAll();
+      if (successMessage) Alert.alert('Updated', successMessage);
     } catch (error) {
       Alert.alert('Action failed', error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -507,20 +512,32 @@ export default function AdminScreen() {
             <SmallButton
               label="Approve"
               active={business.status === 'active'}
-              disabled={workingId === business.id}
-              onPress={() => void runAction(business.id, () => getSupabaseClient().rpc('gascars_admin_set_business_status', { p_business_id: business.id, p_status: 'active' }))}
+              disabled={workingId === business.id || business.status === 'active'}
+              onPress={() => void runAction(
+                business.id,
+                () => getSupabaseClient().rpc('gascars_admin_set_business_status', { p_business_id: business.id, p_status: 'active' }),
+                business.name + ' is now approved and can receive matched leads.',
+              )}
             />
             <SmallButton
               label="Pending"
               active={business.status === 'pending'}
-              disabled={workingId === business.id}
-              onPress={() => void runAction(business.id, () => getSupabaseClient().rpc('gascars_admin_set_business_status', { p_business_id: business.id, p_status: 'pending' }))}
+              disabled={workingId === business.id || business.status === 'pending'}
+              onPress={() => void runAction(
+                business.id,
+                () => getSupabaseClient().rpc('gascars_admin_set_business_status', { p_business_id: business.id, p_status: 'pending' }),
+                business.name + ' is pending review.',
+              )}
             />
             <SmallButton
               label="Suspend"
               danger
-              disabled={workingId === business.id}
-              onPress={() => void runAction(business.id, () => getSupabaseClient().rpc('gascars_admin_set_business_status', { p_business_id: business.id, p_status: 'suspended' }))}
+              disabled={workingId === business.id || business.status === 'suspended'}
+              onPress={() => void runAction(
+                business.id,
+                () => getSupabaseClient().rpc('gascars_admin_set_business_status', { p_business_id: business.id, p_status: 'suspended' }),
+                business.name + ' has been suspended.',
+              )}
             />
           </View>
         </View>
