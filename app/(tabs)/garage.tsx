@@ -1,9 +1,12 @@
+import { useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, PrimaryButton, SectionTitle } from '@/components/ui';
 import { colors } from '@/constants/theme';
 
 export default function GarageScreen() {
+  const router = useRouter();
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -23,7 +26,11 @@ export default function GarageScreen() {
           <Card style={styles.stat}><Text style={styles.statLabel}>Fuel</Text><Text style={styles.statValueSmall}>Regular</Text><Text style={styles.statUnit}>preferred</Text></Card>
         </View>
 
-        <PrimaryButton label="Request service" accent />
+        <PrimaryButton
+          label="Request service"
+          accent
+          onPress={() => router.push('/(tabs)/request')}
+        />
 
         <View style={{ marginTop: 24 }}><SectionTitle title="Maintenance" right="Demo history" /></View>
         {[['Oil & filter change', 'Completed · 64,980 mi', 'Done'], ['Brake inspection', 'Recommended within 30 days', 'Due soon'], ['Battery health check', 'Last checked 5 months ago', 'Good']].map(([name, meta, state]) => (

@@ -1,4 +1,4 @@
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, PrimaryButton, SectionTitle } from '@/components/ui';
@@ -63,6 +63,17 @@ export default function ProfileScreen() {
           ))}
         </Card>
 
+        {user ? (
+          <Pressable onPress={() => router.push('/business')} style={styles.businessPortal}>
+            <View style={styles.businessPortalIcon}><Text style={styles.businessPortalIconText}>B</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.businessPortalTitle}>Business Portal</Text>
+              <Text style={styles.businessPortalText}>Set the services you offer and choose Shop, Mobile or Both.</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
+        ) : null}
+
         <View style={styles.guard}>
           <Text style={styles.guardTitle}>API cost protection</Text>
           <Text style={styles.guardText}>Production will use spending thresholds and alerts before paid fuel-search usage exceeds the agreed monthly budget.</Text>
@@ -93,6 +104,11 @@ const styles = StyleSheet.create({
   rowTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
   rowMeta: { color: colors.muted, fontSize: 10, marginTop: 3 },
   chevron: { color: '#A3A59E', fontSize: 25 },
+  businessPortal: { marginTop: 16, minHeight: 78, borderRadius: 18, backgroundColor: colors.ink, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  businessPortalIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
+  businessPortalIconText: { color: colors.ink, fontSize: 14, fontWeight: '950' },
+  businessPortalTitle: { color: colors.white, fontSize: 13, fontWeight: '900' },
+  businessPortalText: { color: '#C8CAC3', fontSize: 10, lineHeight: 15, marginTop: 3 },
   guard: { marginTop: 16, backgroundColor: colors.limeSoft, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: '#DDEABF' },
   guardTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
   guardText: { color: colors.muted, fontSize: 10, lineHeight: 16, marginTop: 4 },
