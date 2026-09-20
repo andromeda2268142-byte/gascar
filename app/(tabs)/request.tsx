@@ -222,20 +222,28 @@ export default function RequestScreen() {
     setErrors((current) => ({ ...current, service: undefined }));
   }
 
-  async function openNotification(notification: DriverNotification) {
-    const supabase = getSupabaseClient();
+  const currentCase = useMemo(() => {
+    const active = myRequests.find((request) => ['open', 'accepted', 'in_progress'].includes(request.status));
+    return active ?? myRequests[0] ?? null;
+  }, [myRequests]);
 
-    if (!notification.read_at) {
-      await supabase.rpc('gascars_mark_notification_read', {
-        p_notification_id: notification.id,
-      });
-    }
+  const unreadMessagesForCurrentCase = useMemo(() => {
+    if (!currentCase) return 0;
+    return notifications.filter(
+      (item) =>
+        item.type === 'new_message' &&
+        item.lead_id === currentCase.id &&
+        !item.read_at,
+    ).length;
+  }, [currentCase, notifications]);
 
-    if (notification.lead_id) {
-      await loadMyRequests();
-      router.push({ pathname: '/lead-chat', params: { leadId: notification.lead_id } });
-    }
-  }
+  const progressIndex = useMemo(() => {
+    if (!currentCase) return 0;
+    if (currentCase.status === 'completed') return 3;
+    if (currentCase.status === 'in_progress') return 2;
+    if (currentCase.status === 'accepted') return 1;
+    return 0;
+  }, [currentCase]);
 
   async function submit() {
     if (!user) {
@@ -377,97 +385,109 @@ export default function RequestScreen() {
             </View>
           </View>
 
-          {user && notifications.length ? (
-            <View style={styles.activityWrap}>
-              <View style={styles.activityHeader}>
+          {user && currentCase ? (
+            <View style={styles.caseWrap}>
+              <View style={styles.caseHeader}>
                 <View>
-                  <Text style={styles.activityKicker}>LIVE UPDATES</Text>
-                  <Text style={styles.activityTitle}>What changed</Text>
+                  <Text style={styles.caseKicker}>CURRENT SERVICE</Text>
+                  <Text style={styles.caseTitle}>{currentCase.service || 'Service request'}</Text>
                 </View>
-                <View style={styles.unreadPill}>
-                  <Text style={styles.unreadPillText}>
-                    {notifications.filter((item) => !item.read_at).length} unread
+                <View style={[
+                  styles.caseStatus,
+                  currentCase.status === 'completed'
+                    ? styles.caseStatusDone
+                    : currentCase.status === 'in_progress'
+                      ? styles.caseStatusActive
+                      : currentCase.status === 'accepted'
+                        ? styles.caseStatusAccepted
+                        : styles.caseStatusWaiting,
+                ]}>
+                  <Text style={styles.caseStatusText}>
+                    {currentCase.status === 'open'
+                      ? 'WAITING'
+                      : currentCase.status.replaceAll('_', ' ').toUpperCase()}
                   </Text>
                 </View>
               </View>
 
-              {notifications.slice(0, 4).map((notification) => (
-                <Pressable
-                  key={notification.id}
-                  onPress={() => void openNotification(notification)}
-                  style={[
-                    styles.notificationCard,
-                    !notification.read_at && styles.notificationCardUnread,
-                  ]}
-                >
-                  <View style={[styles.notificationIcon, !notification.read_at && styles.notificationIconUnread]}>
-                    <Text style={styles.notificationIconText}>
-                      {notification.type === 'new_message' ? '✉' :
-                       notification.type === 'lead_accepted' ? '✓' :
-                       notification.type === 'job_started' ? '▶' : '✓'}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.notificationTitle}>{notification.title}</Text>
-                    <Text style={styles.notificationBody}>{notification.body}</Text>
-                    <Text style={styles.notificationTime}>{new Date(notification.created_at).toLocaleString()}</Text>
-                  </View>
-                  {!notification.read_at ? <View style={styles.unreadDot} /> : null}
-                </Pressable>
-              ))}
+              <Text style={styles.caseProvider}>
+                {currentCase.accepted_business_id
+                  ? currentCase.provider_name || 'Matched provider'
+                  : 'Searching for a matching provider'}
+              </Text>
+
+              <View style={styles.progressTrack}>
+                {[
+                  ['Request sent', 0],
+                  ['Accepted', 1],
+                  ['In progress', 2],
+                  ['Completed', 3],
+                ].map(([label, index], stepIndex) => {
+                  const done = progressIndex >= Number(index);
+                  const current = progressIndex === Number(index);
+                  return (
+                    <View key={String(label)} style={styles.progressStepWrap}>
+                      <View style={styles.progressRow}>
+                        <View style={[
+                          styles.progressDot,
+                          done && styles.progressDotDone,
+                          current && styles.progressDotCurrent,
+                        ]}>
+                          <Text style={[styles.progressDotText, done && styles.progressDotTextDone]}>
+                            {done && !current ? '✓' : stepIndex + 1}
+                          </Text>
+                        </View>
+                        {stepIndex < 3 ? (
+                          <View style={[styles.progressLine, progressIndex > Number(index) && styles.progressLineDone]} />
+                        ) : null}
+                      </View>
+                      <Text style={[styles.progressLabel, done && styles.progressLabelDone]}>{label}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+
+              <View style={styles.caseNow}>
+                <Text style={styles.caseNowLabel}>RIGHT NOW</Text>
+                <Text style={styles.caseNowTitle}>
+                  {currentCase.status === 'open'
+                    ? 'We are matching your request'
+                    : currentCase.status === 'accepted'
+                      ? (currentCase.provider_name || 'Your provider') + ' accepted your request'
+                      : currentCase.status === 'in_progress'
+                        ? (currentCase.provider_name || 'Your provider') + ' is working on your vehicle'
+                        : 'The provider marked this service completed'}
+                </Text>
+                <Text style={styles.caseNowText}>
+                  {currentCase.status === 'open'
+                    ? 'You will see this same card update when a qualified provider accepts.'
+                    : currentCase.status === 'accepted'
+                      ? 'You can contact the provider from the floating message button.'
+                      : currentCase.status === 'in_progress'
+                        ? 'The provider controls the work status. This card updates automatically as the case advances.'
+                        : 'This service is finished. The case remains visible as the final record of progress.'}
+                </Text>
+              </View>
             </View>
           ) : null}
 
-          {user ? (
-            <View style={styles.myRequestsWrap}>
-              <View style={styles.myRequestsHeader}>
-                <View>
-                  <Text style={styles.myRequestsKicker}>MY REQUESTS</Text>
-                  <Text style={styles.myRequestsTitle}>Repair activity</Text>
-                </View>
-                <Text style={styles.myRequestsCount}>{loadingMyRequests ? 'Syncing…' : myRequests.length + ' recent'}</Text>
-              </View>
-
-              {myRequests.length ? myRequests.slice(0, 4).map((request) => {
-                const accepted = Boolean(request.accepted_business_id);
-                return (
-                  <View key={request.id} style={styles.myRequestCard}>
+          {user && myRequests.filter((request) => request.id !== currentCase?.id).length ? (
+            <View style={styles.historyWrap}>
+              <Text style={styles.historyTitle}>Recent services</Text>
+              {myRequests
+                .filter((request) => request.id !== currentCase?.id)
+                .slice(0, 3)
+                .map((request) => (
+                  <View key={request.id} style={styles.historyRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.myRequestService}>{request.service || 'Service request'}</Text>
-                      <Text style={styles.myRequestMeta}>
+                      <Text style={styles.historyService}>{request.service || 'Service request'}</Text>
+                      <Text style={styles.historyMeta}>
                         {request.status.replaceAll('_', ' ')} · {new Date(request.created_at).toLocaleDateString()}
                       </Text>
-                      {request.status === 'in_progress' ? (
-                        <Text style={styles.inProgressText}>● {request.provider_name || 'Your provider'} is working on this now</Text>
-                      ) : null}
-                      {request.status === 'completed' ? (
-                        <Text style={styles.completedText}>✓ Work marked completed</Text>
-                      ) : null}
-                      {accepted ? (
-                        <Text style={styles.acceptedText}>
-                          ✓ Accepted by {request.provider_name || 'a provider'}
-                        </Text>
-                      ) : (
-                        <Text style={styles.waitingText}>Waiting for a matching provider</Text>
-                      )}
                     </View>
-
-                    {accepted ? (
-                      <Pressable
-                        onPress={() => router.push({ pathname: '/lead-chat', params: { leadId: request.id } })}
-                        style={styles.messageProviderButton}
-                      >
-                        <Text style={styles.messageProviderText}>Message</Text>
-                      </Pressable>
-                    ) : null}
+                    <Text style={styles.historyArrow}>›</Text>
                   </View>
-                );
-              }) : (
-                <View style={styles.myRequestEmpty}>
-                  <Text style={styles.myRequestEmptyTitle}>No requests yet</Text>
-                  <Text style={styles.myRequestEmptyText}>Your requests and provider acceptance status will appear here in real time.</Text>
-                </View>
-              )}
+                ))}
             </View>
           ) : null}
 
@@ -677,6 +697,22 @@ export default function RequestScreen() {
             />
           </View>
         </ScrollView>
+
+        {user && currentCase?.accepted_business_id ? (
+          <Pressable
+            onPress={() => router.push({ pathname: '/lead-chat', params: { leadId: currentCase.id } })}
+            style={({ pressed }) => [styles.messageFab, pressed && { opacity: 0.86 }]}
+          >
+            <Text style={styles.messageFabIcon}>✉</Text>
+            {unreadMessagesForCurrentCase > 0 ? (
+              <View style={styles.messageFabBadge}>
+                <Text style={styles.messageFabBadgeText}>
+                  {unreadMessagesForCurrentCase > 9 ? '9+' : unreadMessagesForCurrentCase}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -698,38 +734,43 @@ const styles = StyleSheet.create({
   heroIcon: { fontSize: 26 },
   heroTitle: { color: colors.ink, fontSize: 16, fontWeight: '900' },
   heroText: { marginTop: 4, color: colors.muted, lineHeight: 18, fontSize: 12 },
-  activityWrap: { marginBottom: 18 },
-  activityHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 9 },
-  activityKicker: { color: colors.coral, fontSize: 8.5, fontWeight: '950', letterSpacing: 1 },
-  activityTitle: { color: colors.ink, fontSize: 18, fontWeight: '950', marginTop: 2 },
-  unreadPill: { borderRadius: 999, backgroundColor: colors.coralSoft, paddingHorizontal: 9, paddingVertical: 5 },
-  unreadPillText: { color: colors.coral, fontSize: 8.5, fontWeight: '950' },
-  notificationCard: { minHeight: 78, borderRadius: 17, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 7 },
-  notificationCardUnread: { borderColor: '#D1E7A5', backgroundColor: '#FBFFF3' },
-  notificationIcon: { width: 38, height: 38, borderRadius: 13, backgroundColor: '#EEECE5', alignItems: 'center', justifyContent: 'center' },
-  notificationIconUnread: { backgroundColor: colors.limeSoft },
-  notificationIconText: { color: colors.ink, fontSize: 14, fontWeight: '950' },
-  notificationTitle: { color: colors.ink, fontSize: 11.5, fontWeight: '950' },
-  notificationBody: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
-  notificationTime: { color: '#A0A39B', fontSize: 7.5, marginTop: 5 },
-  unreadDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: colors.coral },
-  myRequestsWrap: { marginBottom: 20 },
-  myRequestsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 9 },
-  myRequestsKicker: { color: colors.coral, fontSize: 8.5, fontWeight: '950', letterSpacing: 1 },
-  myRequestsTitle: { color: colors.ink, fontSize: 18, fontWeight: '950', marginTop: 2 },
-  myRequestsCount: { color: colors.muted, fontSize: 9, fontWeight: '800' },
-  myRequestCard: { minHeight: 78, borderRadius: 17, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 7 },
-  myRequestService: { color: colors.ink, fontSize: 12.5, fontWeight: '950' },
-  myRequestMeta: { color: colors.muted, fontSize: 9, marginTop: 3, textTransform: 'capitalize' },
-  acceptedText: { color: '#3E8E73', fontSize: 9.5, fontWeight: '900', marginTop: 5 },
-  inProgressText: { color: colors.coral, fontSize: 9.5, fontWeight: '900', marginTop: 5 },
-  completedText: { color: '#3E8E73', fontSize: 9.5, fontWeight: '900', marginTop: 5 },
-  waitingText: { color: colors.muted, fontSize: 9.5, marginTop: 5 },
-  messageProviderButton: { minHeight: 38, borderRadius: 12, backgroundColor: colors.ink, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
-  messageProviderText: { color: colors.lime, fontSize: 9.5, fontWeight: '950' },
-  myRequestEmpty: { borderRadius: 17, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 14 },
-  myRequestEmptyTitle: { color: colors.ink, fontSize: 11.5, fontWeight: '950' },
-  myRequestEmptyText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  caseWrap: { marginBottom: 20, borderRadius: 24, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 17 },
+  caseHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  caseKicker: { color: colors.coral, fontSize: 8.5, fontWeight: '950', letterSpacing: 1.1 },
+  caseTitle: { color: colors.ink, fontSize: 20, lineHeight: 24, fontWeight: '950', marginTop: 3 },
+  caseProvider: { color: colors.muted, fontSize: 10.5, fontWeight: '800', marginTop: 5 },
+  caseStatus: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  caseStatusWaiting: { backgroundColor: colors.sunSoft },
+  caseStatusAccepted: { backgroundColor: colors.violetSoft },
+  caseStatusActive: { backgroundColor: colors.coralSoft },
+  caseStatusDone: { backgroundColor: colors.limeSoft },
+  caseStatusText: { color: colors.ink, fontSize: 7.5, fontWeight: '950', letterSpacing: 0.5 },
+  progressTrack: { flexDirection: 'row', marginTop: 22, marginBottom: 18 },
+  progressStepWrap: { flex: 1 },
+  progressRow: { flexDirection: 'row', alignItems: 'center' },
+  progressDot: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#E7E4DC', borderWidth: 2, borderColor: '#D4D1C8', alignItems: 'center', justifyContent: 'center' },
+  progressDotDone: { backgroundColor: colors.ink, borderColor: colors.ink },
+  progressDotCurrent: { borderColor: colors.coral, borderWidth: 3 },
+  progressDotText: { color: colors.muted, fontSize: 8.5, fontWeight: '950' },
+  progressDotTextDone: { color: colors.lime },
+  progressLine: { flex: 1, height: 3, backgroundColor: '#E1DED5', marginHorizontal: 4, borderRadius: 2 },
+  progressLineDone: { backgroundColor: colors.ink },
+  progressLabel: { color: '#999C94', fontSize: 7.5, fontWeight: '800', marginTop: 6, paddingRight: 4 },
+  progressLabelDone: { color: colors.ink },
+  caseNow: { borderRadius: 17, backgroundColor: '#F3F1EA', padding: 13 },
+  caseNowLabel: { color: colors.coral, fontSize: 7.5, fontWeight: '950', letterSpacing: 0.8 },
+  caseNowTitle: { color: colors.ink, fontSize: 12.5, lineHeight: 17, fontWeight: '950', marginTop: 4 },
+  caseNowText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 4 },
+  historyWrap: { marginBottom: 20 },
+  historyTitle: { color: colors.ink, fontSize: 14, fontWeight: '950', marginBottom: 8 },
+  historyRow: { minHeight: 58, borderRadius: 15, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
+  historyService: { color: colors.ink, fontSize: 11, fontWeight: '900' },
+  historyMeta: { color: colors.muted, fontSize: 8.5, marginTop: 3, textTransform: 'capitalize' },
+  historyArrow: { color: '#A3A59E', fontSize: 22 },
+  messageFab: { position: 'absolute', right: 20, bottom: 92, width: 58, height: 58, borderRadius: 29, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 5 }, elevation: 7 },
+  messageFabIcon: { color: colors.lime, fontSize: 21, fontWeight: '950' },
+  messageFabBadge: { position: 'absolute', right: -2, top: -3, minWidth: 20, height: 20, borderRadius: 10, backgroundColor: colors.coral, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.background },
+  messageFabBadgeText: { color: colors.white, fontSize: 8, fontWeight: '950' },
   serviceCard: { padding: 12 },
   searchWrap: { minHeight: 52, borderRadius: 16, backgroundColor: '#F5F3EC', borderWidth: 1, borderColor: colors.line, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13 },
   searchIcon: { color: colors.muted, fontSize: 21, marginRight: 8 },
