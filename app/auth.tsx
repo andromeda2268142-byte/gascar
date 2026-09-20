@@ -17,11 +17,13 @@ import { colors } from '@/constants/theme';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 
 type Mode = 'signin' | 'signup';
+type AccountType = 'driver' | 'business';
 
 export default function AuthScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ email?: string; mode?: Mode; verified?: string }>();
   const [mode, setMode] = useState<Mode>(params.mode === 'signup' ? 'signup' : 'signin');
+  const [accountType, setAccountType] = useState<AccountType>('driver');
   const [name, setName] = useState('');
   const [email, setEmail] = useState(params.email ?? '');
   const [password, setPassword] = useState('');
@@ -31,6 +33,10 @@ export default function AuthScreen() {
   async function submit() {
     if (!isSupabaseConfigured) {
       Alert.alert('Supabase not connected on this device', 'Add the temporary Supabase URL and publishable key to the Expo environment before testing accounts.');
+      return;
+    }
+    if (mode === 'signup' && !name.trim()) {
+      Alert.alert('Name required', accountType === 'business' ? 'Enter your name before creating the business account.' : 'Enter your name before creating the account.');
       return;
     }
     if (!email.trim() || password.length < 6) {
@@ -46,15 +52,20 @@ export default function AuthScreen() {
         const { data, error } = await supabase.auth.signUp({
           email: email.trim().toLowerCase(),
           password,
-          options: { data: { full_name: name.trim() || undefined } },
+          options: { data: { full_name: name.trim() || undefined, account_type: accountType } },
         });
         if (error) throw error;
 
         if (!data.session) {
           router.replace({
             pathname: '/verify-email',
-            params: { email: email.trim().toLowerCase() },
+            params: { email: email.trim().toLowerCase(), accountType },
           });
+          return;
+        }
+
+        if (accountType === 'business') {
+          router.replace('/business');
           return;
         }
       } else {
@@ -72,6 +83,11 @@ export default function AuthScreen() {
 
         if (profile?.role === 'admin') {
           router.replace('/admin');
+          return;
+        }
+
+        if (profile?.role === 'business') {
+          router.replace('/business');
           return;
         }
       }
@@ -107,8 +123,10 @@ export default function AuthScreen() {
           <Text style={styles.title}>{mode === 'signin' ? 'Welcome back.' : 'Create your account.'}</Text>
           <Text style={styles.subtitle}>
             {mode === 'signin'
-              ? 'Sign in to save vehicles, request help and keep your activity in one place.'
-              : 'Start as a driver. Business access can be added to the same account later.'}
+              ? 'One sign-in for drivers, automotive businesses and administrators.'
+              : accountType === 'business'
+                ? 'Create your business account, verify your email, then complete your provider profile.'
+                : 'Create a driver account to save vehicles, request help and personalize Gas Car’s.'}
           </Text>
 
           {params.verified === '1' ? (
@@ -128,11 +146,32 @@ export default function AuthScreen() {
           <View style={styles.form}>
             {mode === 'signup' ? (
               <View>
-                <Text style={styles.label}>Name</Text>
+                <Text style={styles.label}>How will you use Gas Car’s?</Text>
+                <View style={styles.accountTypeRow}>
+                  <Pressable
+                    onPress={() => setAccountType('driver')}
+                    style={[styles.accountTypeCard, accountType === 'driver' && styles.accountTypeCardActive]}
+                  >
+                    <Text style={styles.accountTypeIcon}>🚘</Text>
+                    <Text style={[styles.accountTypeTitle, accountType === 'driver' && styles.accountTypeTitleActive]}>Driver</Text>
+                    <Text style={styles.accountTypeText}>Find fuel, mechanics, towing and manage your garage.</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => setAccountType('business')}
+                    style={[styles.accountTypeCard, accountType === 'business' && styles.accountTypeCardActive]}
+                  >
+                    <Text style={styles.accountTypeIcon}>🔧</Text>
+                    <Text style={[styles.accountTypeTitle, accountType === 'business' && styles.accountTypeTitleActive]}>Business</Text>
+                    <Text style={styles.accountTypeText}>Offer automotive services and receive matched leads.</Text>
+                  </Pressable>
+                </View>
+
+                <Text style={[styles.label, { marginTop: 14 }]}>Your name</Text>
                 <TextInput
                   value={name}
                   onChangeText={setName}
-                  placeholder="Your name"
+                  placeholder={accountType === 'business' ? 'Account owner name' : 'Your name'}
                   placeholderTextColor="#A1A39C"
                   style={styles.input}
                   autoCapitalize="words"
@@ -183,6 +222,13 @@ export default function AuthScreen() {
               </View>
             </View>
 
+            {mode === 'signup' && accountType === 'business' ? (
+              <View style={styles.businessNote}>
+                <Text style={styles.businessNoteTitle}>Business verification</Text>
+                <Text style={styles.businessNoteText}>Your business will start as Pending. You can complete the profile and services immediately, but leads begin after admin approval.</Text>
+              </View>
+            ) : null}
+
             <Pressable
               disabled={working}
               onPress={submit}
@@ -228,6 +274,16 @@ const styles = StyleSheet.create({
   setupTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
   setupText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
   form: { gap: 14, marginTop: 24 },
+  accountTypeRow: { flexDirection: 'row', gap: 9 },
+  accountTypeCard: { flex: 1, minHeight: 132, borderRadius: 18, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, padding: 13 },
+  accountTypeCardActive: { borderColor: colors.coral, backgroundColor: '#FFF7F3' },
+  accountTypeIcon: { fontSize: 23 },
+  accountTypeTitle: { color: colors.ink, fontSize: 13, fontWeight: '900', marginTop: 8 },
+  accountTypeTitleActive: { color: colors.coral },
+  accountTypeText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 4 },
+  businessNote: { borderRadius: 15, backgroundColor: colors.sunSoft, borderWidth: 1, borderColor: '#E9D793', padding: 12 },
+  businessNoteTitle: { color: colors.ink, fontSize: 10.5, fontWeight: '900' },
+  businessNoteText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
   label: { color: colors.ink, fontSize: 11, fontWeight: '900', marginBottom: 7 },
   input: { height: 54, borderRadius: 16, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, paddingHorizontal: 15, color: colors.ink, fontSize: 14 },
   passwordWrap: {
