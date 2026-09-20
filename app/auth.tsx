@@ -161,7 +161,7 @@ export default function AuthScreen() {
           <Text style={styles.title}>{mode === 'signin' ? 'Welcome back.' : 'Create your account.'}</Text>
           <Text style={styles.subtitle}>
             {mode === 'signin'
-              ? 'One sign-in for drivers, automotive businesses and administrators.'
+              ? 'Sign in to your Driver, Business or Admin account.'
               : accountType === 'business'
                 ? 'Create your business account, verify your email, then complete your provider profile.'
                 : 'Create a driver account to save vehicles, request help and personalize Gas Car’s.'}
@@ -208,7 +208,7 @@ export default function AuthScreen() {
                   >
                     <Text style={styles.accountTypeIcon}>🔧</Text>
                     <Text style={[styles.accountTypeTitle, accountType === 'business' && styles.accountTypeTitleActive]}>Business</Text>
-                    <Text style={styles.accountTypeText}>Offer automotive services and receive matched leads.</Text>
+                    <Text style={styles.accountTypeText}>Create a separate provider account for leads, services and business operations.</Text>
                   </Pressable>
                 </View>
 
@@ -270,7 +270,7 @@ export default function AuthScreen() {
             {mode === 'signup' && accountType === 'business' ? (
               <View style={styles.businessNote}>
                 <Text style={styles.businessNoteTitle}>Business verification</Text>
-                <Text style={styles.businessNoteText}>Your business will start as Pending. You can complete the profile and services immediately, but leads begin after admin approval.</Text>
+                <Text style={styles.businessNoteText}>This is a separate provider account. It starts as Pending; you can configure services immediately, but leads begin after admin approval.</Text>
               </View>
             ) : null}
 
