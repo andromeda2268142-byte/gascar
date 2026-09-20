@@ -1,0 +1,18 @@
+export const colors = {
+  paper: '#FFFDF8',
+  background: '#F7F3EA',
+  ink: '#23251F',
+  muted: '#74776E',
+  line: '#E5E0D5',
+  coral: '#FF6B4A',
+  coralSoft: '#FFE4DC',
+  lime: '#B8E85F',
+  limeSoft: '#EEF8D9',
+  violet: '#8A6DE9',
+  violetSoft: '#EEE9FD',
+  mint: '#6DD5B1',
+  mintSoft: '#E2F7EF',
+  sun: '#F4C654',
+  sunSoft: '#FFF4D5',
+  white: '#FFFFFF',
+};

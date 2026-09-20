@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Gas Car's",
+    "slug": "gascar",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "gascars",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gascars.app"
+    },
+    "android": {
+      "package": "com.gascars.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFDF8"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
