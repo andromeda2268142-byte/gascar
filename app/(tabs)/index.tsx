@@ -44,7 +44,7 @@ function markerLabel(place: MapPlace) {
 export default function ExploreScreen() {
   const mapRef = useRef<MapView>(null);
   const [category, setCategory] = useState<MapCategory>('gas');
-  const [selected, setSelected] = useState<MapPlace>(mapPlaces[0]);
+  const [selected, setSelected] = useState<MapPlace | null>(null);
   const [search, setSearch] = useState('');
   const [locationEnabled, setLocationEnabled] = useState(false);
 
@@ -59,9 +59,9 @@ export default function ExploreScreen() {
 
   function selectCategory(nextCategory: MapCategory) {
     setCategory(nextCategory);
+    setSelected(null);
     const first = mapPlaces.find((place) => place.category === nextCategory);
     if (first) {
-      setSelected(first);
       mapRef.current?.animateToRegion(
         {
           latitude: first.latitude,
@@ -133,15 +133,19 @@ export default function ExploreScreen() {
         showsUserLocation={locationEnabled}
         showsMyLocationButton={false}
         toolbarEnabled={false}
+        onPress={() => setSelected(null)}
       >
         {visiblePlaces.map((place) => (
           <Marker
             key={place.id}
             coordinate={{ latitude: place.latitude, longitude: place.longitude }}
-            onPress={() => selectPlace(place)}
+            onPress={(event) => {
+              event.stopPropagation();
+              selectPlace(place);
+            }}
             tracksViewChanges={false}
           >
-            <View style={[styles.marker, place.category !== 'gas' && styles.markerRound, selected.id === place.id && styles.markerSelected]}>
+            <View style={[styles.marker, place.category !== 'gas' && styles.markerRound, selected?.id === place.id && styles.markerSelected]}>
               <Text style={[styles.markerText, place.category !== 'gas' && styles.markerIcon]}>{markerLabel(place)}</Text>
             </View>
           </Marker>
@@ -188,7 +192,7 @@ export default function ExploreScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      <Pressable onPress={useMyLocation} style={styles.locationButton}>
+      <Pressable onPress={useMyLocation} style={[styles.locationButton, { bottom: selected ? 286 : 104 }]}>
         <Text style={styles.locationButtonText}>⌖</Text>
       </Pressable>
 
@@ -242,7 +246,7 @@ export default function ExploreScreen() {
         </View>
       ) : null}
 
-      <View style={styles.demoBadge}>
+      <View style={[styles.demoBadge, { bottom: selected ? 286 : 104 }]}>
         <View style={styles.demoDot} />
         <Text style={styles.demoText}>Precios demo</Text>
       </View>
@@ -354,7 +358,6 @@ const styles = StyleSheet.create({
   locationButton: {
     position: 'absolute',
     right: 16,
-    bottom: 286,
     width: 50,
     height: 50,
     borderRadius: 18,
@@ -435,7 +438,6 @@ const styles = StyleSheet.create({
   demoBadge: {
     position: 'absolute',
     left: 16,
-    bottom: 286,
     height: 32,
     paddingHorizontal: 11,
     borderRadius: 999,
