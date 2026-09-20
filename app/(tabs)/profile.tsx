@@ -1,11 +1,9 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, PrimaryButton, SectionTitle } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { useAuth } from '@/providers/auth';
-import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 
 const rows = [
   ['♥', 'Saved places', 'Favorites and preferred providers'],
@@ -23,28 +21,6 @@ function initials(email?: string) {
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, loading, configured, signOut } = useAuth();
-  const [role, setRole] = useState<'driver' | 'business' | 'admin' | null>(null);
-
-  useEffect(() => {
-    if (!user || !isSupabaseConfigured) {
-      setRole(null);
-      return;
-    }
-
-    let active = true;
-    getSupabaseClient()
-      .from('gascars_profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-      .then(({ data }) => {
-        if (active) setRole((data?.role as 'driver' | 'business' | 'admin' | undefined) ?? null);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [user]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -87,29 +63,6 @@ export default function ProfileScreen() {
           ))}
         </Card>
 
-        {user && role === 'admin' ? (
-          <Pressable onPress={() => router.push('/admin')} style={styles.adminPortal}>
-            <View style={styles.adminPortalIcon}><Text style={styles.adminPortalIconText}>A</Text></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.businessPortalTitle}>Admin Portal</Text>
-              <Text style={styles.businessPortalText}>Businesses, users, services, leads, support and platform controls.</Text>
-            </View>
-            <Text style={[styles.chevron, { color: colors.lime }]}>›</Text>
-          </Pressable>
-        ) : user ? (
-          <Pressable onPress={() => router.push('/business')} style={styles.businessPortal}>
-            <View style={styles.businessPortalIcon}><Text style={styles.businessPortalIconText}>B</Text></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.businessPortalTitle}>{role === 'business' ? 'Business Portal' : 'Add your business'}</Text>
-              <Text style={styles.businessPortalText}>
-                {role === 'business'
-                  ? 'Manage your provider profile, services and matched leads.'
-                  : 'Own an automotive business? Add it to this account without creating another login.'}
-              </Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
-        ) : null}
 
         <View style={styles.guard}>
           <Text style={styles.guardTitle}>API cost protection</Text>
