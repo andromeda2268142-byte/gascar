@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,60 +13,30 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Card, PrimaryButton, SectionTitle } from '@/components/ui';
 import { colors } from '@/constants/theme';
 import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
-import {
-  filterServices,
-  loadServiceCatalog,
-  type BusinessServiceMode,
-  type ServiceCatalogItem,
-  type ServiceCategory,
-} from '@/lib/services';
+import { loadOwnedProviderBusiness } from '@/lib/provider';
 import { useAuth } from '@/providers/auth';
 
-type Business = {
-  id: string;
-  name: string;
-  business_type: 'mechanic' | 'towing' | 'parts';
-  status: 'pending' | 'active' | 'suspended';
-};
+type BusinessType = 'mechanic' | 'towing' | 'parts';
 
-type Lead = {
-  id: string;
-  service: string | null;
-  service_location: 'shop' | 'mobile' | 'either';
-  issue_description: string;
-  zip: string | null;
-  created_at: string;
-};
-
-const modes: Array<{ value: BusinessServiceMode; label: string }> = [
-  { value: 'shop', label: 'Shop' },
-  { value: 'mobile', label: 'Mobile' },
-  { value: 'both', label: 'Both' },
-];
-
-export default function BusinessScreen() {
+export default function BusinessOnboardingScreen() {
   const router = useRouter();
   const { user, signOut } = useAuth();
-  const [business, setBusiness] = useState<Business | null>(null);
+
+  const [role, setRole] = useState<'driver' | 'business' | 'admin' | null>(null);
+  const [businessType, setBusinessType] = useState<BusinessType>('mechanic');
   const [businessName, setBusinessName] = useState('');
-  const [businessType, setBusinessType] = useState<'mechanic' | 'towing' | 'parts'>('mechanic');
   const [businessPhone, setBusinessPhone] = useState('');
   const [businessEmail, setBusinessEmail] = useState(user?.email ?? '');
   const [businessAddress, setBusinessAddress] = useState('');
   const [businessCity, setBusinessCity] = useState('');
   const [businessState, setBusinessState] = useState('');
   const [businessZip, setBusinessZip] = useState('');
-  const [catalog, setCatalog] = useState<ServiceCatalogItem[]>([]);
-  const [offerings, setOfferings] = useState<Record<string, BusinessServiceMode>>({});
-  const [serviceSearch, setServiceSearch] = useState('');
-  const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
 
-  const loadBusinessData = useCallback(async () => {
+  const checkAccount = useCallback(async () => {
     if (!user || !isSupabaseConfigured) {
       setLoading(false);
       return;
@@ -73,76 +45,35 @@ export default function BusinessScreen() {
     setLoading(true);
     try {
       const supabase = getSupabaseClient();
-      const { data: businessData, error: businessError } = await supabase
-        .from('gascars_businesses')
-        .select('id, name, business_type, status')
-        .eq('owner_id', user.id)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-
-      if (businessError) throw businessError;
-
-      const nextBusiness = businessData as Business | null;
-      setBusiness(nextBusiness);
-
-      if (!nextBusiness) {
-        setCatalog([]);
-        setOfferings({});
-        setLeads([]);
-        return;
-      }
-
-      if (nextBusiness.business_type === 'parts') {
-        setCatalog([]);
-        setOfferings({});
-        setLeads([]);
-        return;
-      }
-
-      const category: ServiceCategory = nextBusiness.business_type === 'towing' ? 'towing' : 'repair';
-
-      const [services, offeringResult, leadsResult] = await Promise.all([
-        loadServiceCatalog(category),
-        supabase
-          .from('gascars_business_services')
-          .select('service_id, service_mode')
-          .eq('business_id', nextBusiness.id)
-          .eq('active', true),
-        supabase
-          .from('gascars_leads')
-          .select('id, service, service_location, issue_description, zip, created_at')
-          .eq('status', 'open')
-          .order('created_at', { ascending: false })
-          .limit(20),
+      const [{ data: profile, error: profileError }, existingBusiness] = await Promise.all([
+        supabase.from('gascars_profiles').select('role').eq('id', user.id).single(),
+        loadOwnedProviderBusiness(user.id),
       ]);
 
-      if (offeringResult.error) throw offeringResult.error;
-      if (leadsResult.error) throw leadsResult.error;
+      if (profileError) throw profileError;
 
-      const nextOfferings: Record<string, BusinessServiceMode> = {};
-      for (const row of offeringResult.data ?? []) {
-        nextOfferings[row.service_id] = row.service_mode as BusinessServiceMode;
+      const nextRole = (profile?.role as 'driver' | 'business' | 'admin' | undefined) ?? null;
+      setRole(nextRole);
+
+      if (nextRole === 'admin') {
+        router.replace('/admin');
+        return;
       }
 
-      setCatalog(services);
-      setOfferings(nextOfferings);
-      setLeads((leadsResult.data ?? []) as Lead[]);
+      if (existingBusiness && nextRole === 'business') {
+        router.replace('/(provider)');
+        return;
+      }
     } catch (error) {
-      Alert.alert('Could not load business portal', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert('Could not load business setup', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [router, user]);
 
   useEffect(() => {
-    void loadBusinessData();
-  }, [loadBusinessData]);
-
-  const visibleServices = useMemo(
-    () => filterServices(catalog, serviceSearch),
-    [catalog, serviceSearch],
-  );
+    void checkAccount();
+  }, [checkAccount]);
 
   async function logout() {
     await signOut();
@@ -150,28 +81,25 @@ export default function BusinessScreen() {
   }
 
   async function createBusiness() {
-    if (!user) {
-      router.push('/auth');
-      return;
-    }
+    if (!user || role !== 'business') return;
 
-    if (!businessName.trim()) {
-      Alert.alert('Business name required', 'Enter the public business name.');
+    if (businessName.trim().length < 2) {
+      Alert.alert('Business name required', 'Enter the public name of the business.');
       return;
     }
 
     if (!businessPhone.trim()) {
-      Alert.alert('Business phone required', 'Add a phone number customers and Gas Car’s can use for this business.');
+      Alert.alert('Business phone required', 'Add a phone number for this provider account.');
       return;
     }
 
-    if (!businessZip.trim()) {
-      Alert.alert('ZIP code required', 'Add the primary ZIP code for this business.');
+    if (!/^\d{5}$/.test(businessZip.trim())) {
+      Alert.alert('ZIP code required', 'Enter a valid 5-digit primary service ZIP.');
       return;
     }
 
+    setWorking(true);
     try {
-      setLoading(true);
       const { error } = await getSupabaseClient().rpc('gascars_create_business_profile', {
         p_business_type: businessType,
         p_name: businessName.trim(),
@@ -184,80 +112,11 @@ export default function BusinessScreen() {
       });
 
       if (error) throw error;
-      await loadBusinessData();
+      router.replace('/(provider)/services');
     } catch (error) {
-      Alert.alert('Could not create business profile', error instanceof Error ? error.message : 'Please try again.');
-      setLoading(false);
-    }
-  }
-
-  async function toggleService(service: ServiceCatalogItem) {
-    if (!business) return;
-
-    setSavingId(service.id);
-    try {
-      const supabase = getSupabaseClient();
-      const current = offerings[service.id];
-
-      if (current) {
-        const { error } = await supabase
-          .from('gascars_business_services')
-          .delete()
-          .eq('business_id', business.id)
-          .eq('service_id', service.id);
-        if (error) throw error;
-
-        setOfferings((state) => {
-          const next = { ...state };
-          delete next[service.id];
-          return next;
-        });
-      } else {
-        const defaultMode: BusinessServiceMode = business.business_type === 'towing' ? 'mobile' : 'shop';
-        const { error } = await supabase.from('gascars_business_services').insert({
-          business_id: business.id,
-          service_id: service.id,
-          service_mode: defaultMode,
-          active: true,
-        });
-        if (error) throw error;
-        setOfferings((state) => ({ ...state, [service.id]: defaultMode }));
-      }
-
-      const { data: refreshedLeads, error: leadsError } = await supabase
-        .from('gascars_leads')
-        .select('id, service, service_location, issue_description, zip, created_at')
-        .eq('status', 'open')
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (leadsError) throw leadsError;
-      setLeads((refreshedLeads ?? []) as Lead[]);
-    } catch (error) {
-      Alert.alert('Could not update service', error instanceof Error ? error.message : 'Please try again.');
+      Alert.alert('Could not create provider profile', error instanceof Error ? error.message : 'Please try again.');
     } finally {
-      setSavingId(null);
-    }
-  }
-
-  async function changeMode(serviceId: string, mode: BusinessServiceMode) {
-    if (!business || !offerings[serviceId]) return;
-
-    setSavingId(serviceId);
-    try {
-      const { error } = await getSupabaseClient()
-        .from('gascars_business_services')
-        .update({ service_mode: mode })
-        .eq('business_id', business.id)
-        .eq('service_id', serviceId);
-
-      if (error) throw error;
-      setOfferings((state) => ({ ...state, [serviceId]: mode }));
-      await loadBusinessData();
-    } catch (error) {
-      Alert.alert('Could not update service mode', error instanceof Error ? error.message : 'Please try again.');
-    } finally {
-      setSavingId(null);
+      setWorking(false);
     }
   }
 
@@ -272,44 +131,77 @@ export default function BusinessScreen() {
   if (!user) {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={styles.centerContent}>
-          <Text style={styles.kicker}>BUSINESS PORTAL</Text>
+        <View style={styles.center}>
+          <Text style={styles.kicker}>PROVIDER ACCOUNT</Text>
           <Text style={styles.title}>Sign in first.</Text>
-          <Text style={styles.subtitle}>Business services and matched leads are tied to a verified account.</Text>
-          <View style={styles.action}><PrimaryButton label="Sign in" accent onPress={() => router.push('/auth')} /></View>
+          <Pressable onPress={() => router.replace('/auth')} style={styles.primaryButton}>
+            <Text style={styles.primaryButtonText}>Sign in</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );
   }
 
-  if (!business) {
+  if (role !== 'business') {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <ScrollView contentContainerStyle={styles.content}>
-          <View style={styles.topActions}>
-            <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Back</Text></Pressable>
+        <View style={styles.center}>
+          <Text style={styles.kicker}>PROVIDER ACCOUNT</Text>
+          <Text style={styles.title}>Use a separate business account.</Text>
+          <Text style={styles.subtitle}>
+            Driver accounts keep the customer experience. Mechanics, towing companies and parts businesses use a dedicated Business account with provider-only navigation.
+          </Text>
+          <Pressable onPress={() => void logout()} style={styles.primaryButton}>
+            <Text style={styles.primaryButtonText}>Sign out and create Business account</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          automaticallyAdjustKeyboardInsets
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.topRow}>
+            <View style={styles.providerBadge}><Text style={styles.providerBadgeText}>BUSINESS</Text></View>
             <Pressable onPress={() => void logout()}><Text style={styles.signOut}>Sign out</Text></Pressable>
           </View>
-          <Text style={styles.kicker}>BUSINESS PORTAL</Text>
+
+          <Text style={styles.kicker}>GAS CAR'S PROVIDER</Text>
           <Text style={styles.title}>Set up your business.</Text>
-          <Text style={styles.subtitle}>Complete the provider profile. It will remain pending until an administrator approves the business.</Text>
+          <Text style={styles.subtitle}>
+            This account will not have Request Service or Garage. Its workspace is built for leads, services, credits and business operations.
+          </Text>
 
-          <Card style={styles.setupCard}>
-            <Text style={styles.label}>Business name</Text>
-            <TextInput value={businessName} onChangeText={setBusinessName} placeholder="Example: Valdy Auto Care" placeholderTextColor="#A1A39C" style={styles.input} />
-
-            <Text style={styles.label}>Business type</Text>
+          <View style={styles.formCard}>
+            <Text style={styles.label}>Provider type</Text>
             <View style={styles.typeRow}>
-              <Pressable onPress={() => setBusinessType('mechanic')} style={[styles.typeButton, businessType === 'mechanic' && styles.typeButtonActive]}>
-                <Text style={[styles.typeText, businessType === 'mechanic' && styles.typeTextActive]}>🔧 Mechanic</Text>
+              <Pressable onPress={() => setBusinessType('mechanic')} style={[styles.typeCard, businessType === 'mechanic' && styles.typeCardActive]}>
+                <Text style={styles.typeIcon}>🔧</Text>
+                <Text style={[styles.typeTitle, businessType === 'mechanic' && styles.typeTitleActive]}>Mechanic</Text>
+                <Text style={styles.typeText}>Repair and maintenance leads.</Text>
               </Pressable>
-              <Pressable onPress={() => setBusinessType('towing')} style={[styles.typeButton, businessType === 'towing' && styles.typeButtonActive]}>
-                <Text style={[styles.typeText, businessType === 'towing' && styles.typeTextActive]}>🚚 Towing</Text>
+              <Pressable onPress={() => setBusinessType('towing')} style={[styles.typeCard, businessType === 'towing' && styles.typeCardActive]}>
+                <Text style={styles.typeIcon}>🚚</Text>
+                <Text style={[styles.typeTitle, businessType === 'towing' && styles.typeTitleActive]}>Towing</Text>
+                <Text style={styles.typeText}>Roadside and towing leads.</Text>
               </Pressable>
-              <Pressable onPress={() => setBusinessType('parts')} style={[styles.typeButton, businessType === 'parts' && styles.typeButtonActive]}>
-                <Text style={[styles.typeText, businessType === 'parts' && styles.typeTextActive]}>⚙ Parts</Text>
+              <Pressable onPress={() => setBusinessType('parts')} style={[styles.typeCard, businessType === 'parts' && styles.typeCardActive]}>
+                <Text style={styles.typeIcon}>⚙</Text>
+                <Text style={[styles.typeTitle, businessType === 'parts' && styles.typeTitleActive]}>Auto Parts</Text>
+                <Text style={styles.typeText}>Store and inventory workspace.</Text>
               </Pressable>
             </View>
+
+            <Text style={styles.label}>Business name</Text>
+            <TextInput value={businessName} onChangeText={setBusinessName} placeholder="Example: Rapid Auto Care" placeholderTextColor="#A1A39C" style={styles.input} />
 
             <Text style={styles.label}>Business phone</Text>
             <TextInput value={businessPhone} onChangeText={setBusinessPhone} placeholder="(555) 555-5555" placeholderTextColor="#A1A39C" style={styles.input} keyboardType="phone-pad" />
@@ -331,135 +223,22 @@ export default function BusinessScreen() {
               </View>
             </View>
 
-            <Text style={styles.label}>Primary ZIP code</Text>
-            <TextInput value={businessZip} onChangeText={setBusinessZip} placeholder="75201" placeholderTextColor="#A1A39C" style={styles.input} keyboardType="number-pad" />
+            <Text style={styles.label}>Primary service ZIP</Text>
+            <TextInput value={businessZip} onChangeText={setBusinessZip} placeholder="75201" placeholderTextColor="#A1A39C" style={styles.input} keyboardType="number-pad" maxLength={5} />
 
-            <View style={styles.pendingSetupNote}>
-              <Text style={styles.pendingSetupTitle}>What happens next?</Text>
-              <Text style={styles.pendingSetupText}>
-                After this profile is created, mechanics and towing companies select the exact services they offer and whether each service is Shop, Mobile or Both. The business stays Pending until admin approval.
+            <View style={styles.note}>
+              <Text style={styles.noteTitle}>Next step</Text>
+              <Text style={styles.noteText}>
+                Mechanics and towing providers will choose exact services and whether each one is Shop, Mobile or Both. The business stays Pending until admin approval.
               </Text>
             </View>
 
-            <PrimaryButton label="Continue to services" accent onPress={createBusiness} />
-          </Card>
+            <Pressable disabled={working} onPress={() => void createBusiness()} style={({ pressed }) => [styles.primaryButton, (pressed || working) && { opacity: 0.72 }]}>
+              {working ? <ActivityIndicator color={colors.white} /> : <Text style={styles.primaryButtonText}>Continue to provider portal</Text>}
+            </Pressable>
+          </View>
         </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.topActions}>
-          <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Back</Text></Pressable>
-          <Pressable onPress={() => void logout()}><Text style={styles.signOut}>Sign out</Text></Pressable>
-        </View>
-
-        <View style={styles.businessHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.kicker}>BUSINESS PORTAL</Text>
-            <Text style={styles.title}>{business.name}</Text>
-            <Text style={styles.subtitle}>
-              {business.business_type === 'mechanic' ? 'Mechanic' : business.business_type === 'towing' ? 'Towing' : 'Auto Parts'} · {business.status === 'active' ? 'Active' : 'Pending approval'}
-            </Text>
-          </View>
-          <View style={[styles.statusPill, business.status === 'active' && styles.statusActive]}>
-            <Text style={styles.statusText}>{business.status.toUpperCase()}</Text>
-          </View>
-        </View>
-
-        {business.status !== 'active' ? (
-          <View style={styles.pendingNotice}>
-            <Text style={styles.pendingTitle}>{business.business_type === 'parts' ? 'Business pending approval.' : 'You can configure services now.'}</Text>
-            <Text style={styles.pendingText}>
-              {business.business_type === 'parts'
-                ? 'Your store profile is saved. Marketplace visibility begins after admin approval.'
-                : 'Matched leads will begin appearing after this business is approved and active.'}
-            </Text>
-          </View>
-        ) : null}
-
-        {business.business_type === 'parts' ? (
-          <Card style={styles.partsCard}>
-            <Text style={styles.partsTitle}>Auto parts business profile created</Text>
-            <Text style={styles.partsText}>Your store is pending approval. Inventory and parts-specific marketplace controls will live here as that workflow is connected.</Text>
-          </Card>
-        ) : (
-          <>
-        <SectionTitle title="Services I offer" right={String(Object.keys(offerings).length) + ' selected'} />
-        <Card style={styles.servicesCard}>
-          <View style={styles.searchWrap}>
-            <Text style={styles.searchIcon}>⌕</Text>
-            <TextInput value={serviceSearch} onChangeText={setServiceSearch} placeholder="Search services..." placeholderTextColor="#A1A39C" style={styles.searchInput} />
-          </View>
-
-          <Text style={styles.explainer}>
-            A lead is shown to you only when its service matches one you selected and its requested location matches your service mode.
-          </Text>
-
-          {visibleServices.map((service) => {
-            const selectedMode = offerings[service.id];
-            const selected = Boolean(selectedMode);
-            const busy = savingId === service.id;
-
-            return (
-              <View key={service.id} style={styles.serviceRow}>
-                <Pressable onPress={() => void toggleService(service)} style={styles.serviceMain} disabled={busy}>
-                  <View style={[styles.checkbox, selected && styles.checkboxActive]}>
-                    <Text style={styles.checkboxText}>{selected ? '✓' : ''}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.serviceName}>{service.name}</Text>
-                    <Text style={styles.serviceMeta}>{service.group_name || 'Service'}</Text>
-                  </View>
-                  {busy ? <ActivityIndicator size="small" color={colors.coral} /> : null}
-                </Pressable>
-
-                {selected && business.business_type === 'mechanic' ? (
-                  <View style={styles.modeRow}>
-                    {modes.map((mode) => {
-                      const active = selectedMode === mode.value;
-                      return (
-                        <Pressable key={mode.value} onPress={() => void changeMode(service.id, mode.value)} style={[styles.modeButton, active && styles.modeButtonActive]}>
-                          <Text style={[styles.modeText, active && styles.modeTextActive]}>{mode.label}</Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                ) : selected ? (
-                  <View style={styles.mobileOnly}><Text style={styles.mobileOnlyText}>📍 Mobile / roadside</Text></View>
-                ) : null}
-              </View>
-            );
-          })}
-        </Card>
-
-        <View style={styles.sectionGap}>
-          <SectionTitle title="Matched leads" right={business.status === 'active' ? String(leads.length) + ' available' : 'Waiting for approval'} />
-        </View>
-
-        {leads.length ? (
-          leads.map((lead) => (
-            <Card key={lead.id} style={styles.leadCard}>
-              <Text style={styles.leadType}>{(lead.service || 'SERVICE').toUpperCase()}</Text>
-              <Text style={styles.leadTitle}>{lead.zip ? 'ZIP ' + lead.zip : 'Nearby request'}</Text>
-              <Text style={styles.leadMode}>
-                {lead.service_location === 'mobile' ? '📍 Customer needs mobile service' : lead.service_location === 'shop' ? '🏪 Customer will come to shop' : '↔ Either location works'}
-              </Text>
-              <Text style={styles.leadText}>{lead.issue_description}</Text>
-              <View style={styles.locked}><Text style={styles.lockedText}>Contact details remain locked until the lead is unlocked.</Text></View>
-            </Card>
-          ))
-        ) : (
-          <Card style={styles.emptyLead}>
-            <Text style={styles.emptyLeadTitle}>No matched leads yet</Text>
-            <Text style={styles.emptyLeadText}>Only leads that match your selected services and service mode will appear here.</Text>
-          </Card>
-        )}
-          </>
-        )}
-      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -467,66 +246,30 @@ export default function BusinessScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  centerContent: { flex: 1, padding: 22, justifyContent: 'center' },
-  content: { padding: 18, paddingBottom: 50 },
-  topActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 },
-  back: { color: colors.muted, fontWeight: '800', fontSize: 13 },
-  signOut: { color: colors.coral, fontWeight: '900', fontSize: 12 },
-  kicker: { color: colors.coral, fontSize: 11, fontWeight: '950', letterSpacing: 1.6 },
-  title: { marginTop: 6, color: colors.ink, fontSize: 32, lineHeight: 35, fontWeight: '950', letterSpacing: -1.3 },
-  subtitle: { color: colors.muted, marginTop: 8, fontSize: 13, lineHeight: 19 },
-  action: { marginTop: 20 },
-  businessHeader: { flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginBottom: 22 },
-  statusPill: { backgroundColor: colors.sunSoft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
-  statusActive: { backgroundColor: colors.limeSoft },
-  statusText: { color: colors.ink, fontSize: 8, fontWeight: '950', letterSpacing: 0.7 },
-  pendingNotice: { backgroundColor: colors.sunSoft, borderWidth: 1, borderColor: '#E8D692', padding: 13, borderRadius: 17, marginBottom: 20 },
-  pendingTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
-  pendingText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 3 },
-  setupCard: { marginTop: 22, gap: 12 },
-  label: { color: colors.ink, fontSize: 11, fontWeight: '900' },
-  input: { height: 52, borderRadius: 15, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAF9F5', paddingHorizontal: 14, color: colors.ink, fontSize: 13 },
-  typeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  center: { flex: 1, padding: 24, justifyContent: 'center' },
+  content: { padding: 20, paddingBottom: 60 },
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 },
+  providerBadge: { borderRadius: 999, backgroundColor: colors.ink, paddingHorizontal: 11, paddingVertical: 7 },
+  providerBadgeText: { color: colors.lime, fontSize: 8, fontWeight: '950', letterSpacing: 0.8 },
+  signOut: { color: colors.coral, fontSize: 11, fontWeight: '900' },
+  kicker: { color: colors.coral, fontSize: 10, fontWeight: '950', letterSpacing: 1.5 },
+  title: { color: colors.ink, fontSize: 32, lineHeight: 35, fontWeight: '950', letterSpacing: -1.2, marginTop: 5 },
+  subtitle: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 8, maxWidth: 430 },
+  formCard: { marginTop: 22, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 22, padding: 15, gap: 11 },
+  label: { color: colors.ink, fontSize: 10.5, fontWeight: '900', marginTop: 2 },
+  typeRow: { flexDirection: 'row', gap: 7 },
+  typeCard: { flex: 1, minHeight: 112, borderRadius: 15, backgroundColor: '#F2F0E9', borderWidth: 1, borderColor: colors.line, padding: 10 },
+  typeCardActive: { backgroundColor: '#FFF6F2', borderColor: colors.coral },
+  typeIcon: { fontSize: 20 },
+  typeTitle: { color: colors.ink, fontSize: 10.5, fontWeight: '900', marginTop: 7 },
+  typeTitleActive: { color: colors.coral },
+  typeText: { color: colors.muted, fontSize: 8, lineHeight: 12, marginTop: 3 },
+  input: { minHeight: 50, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAF9F5', paddingHorizontal: 13, color: colors.ink, fontSize: 12.5 },
   cityStateRow: { flexDirection: 'row', gap: 8 },
-  stateField: { width: 86 },
-  pendingSetupNote: { backgroundColor: colors.sunSoft, borderWidth: 1, borderColor: '#E9D793', borderRadius: 15, padding: 12, marginVertical: 3 },
-  pendingSetupTitle: { color: colors.ink, fontSize: 10.5, fontWeight: '900' },
-  pendingSetupText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
-  partsCard: { backgroundColor: colors.violetSoft, borderColor: '#DDD4FA', marginTop: 4 },
-  partsTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  partsText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
-  typeButton: { flex: 1, minHeight: 48, borderRadius: 15, backgroundColor: '#F1EFE8', alignItems: 'center', justifyContent: 'center' },
-  typeButtonActive: { backgroundColor: colors.ink },
-  typeText: { color: colors.ink, fontSize: 11, fontWeight: '900' },
-  typeTextActive: { color: colors.white },
-  servicesCard: { padding: 12 },
-  searchWrap: { height: 50, borderRadius: 15, borderWidth: 1, borderColor: colors.line, backgroundColor: '#F7F5EF', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13 },
-  searchIcon: { color: colors.muted, fontSize: 20, marginRight: 7 },
-  searchInput: { flex: 1, color: colors.ink, fontSize: 13, fontWeight: '700' },
-  explainer: { color: colors.muted, fontSize: 10, lineHeight: 15, paddingVertical: 12, paddingHorizontal: 3 },
-  serviceRow: { borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: 10 },
-  serviceMain: { minHeight: 47, flexDirection: 'row', alignItems: 'center', gap: 11 },
-  checkbox: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: '#B6B7B0', alignItems: 'center', justifyContent: 'center' },
-  checkboxActive: { backgroundColor: colors.coral, borderColor: colors.coral },
-  checkboxText: { color: colors.white, fontSize: 13, fontWeight: '950' },
-  serviceName: { color: colors.ink, fontSize: 12.5, fontWeight: '900' },
-  serviceMeta: { color: colors.muted, fontSize: 9.5, marginTop: 2 },
-  modeRow: { flexDirection: 'row', gap: 6, marginLeft: 35, marginTop: 7 },
-  modeButton: { minHeight: 34, paddingHorizontal: 12, borderRadius: 11, backgroundColor: '#EFEEE8', alignItems: 'center', justifyContent: 'center' },
-  modeButtonActive: { backgroundColor: colors.ink },
-  modeText: { color: colors.muted, fontSize: 9.5, fontWeight: '900' },
-  modeTextActive: { color: colors.white },
-  mobileOnly: { marginLeft: 35, marginTop: 5 },
-  mobileOnlyText: { color: colors.muted, fontSize: 10, fontWeight: '800' },
-  sectionGap: { marginTop: 22 },
-  leadCard: { marginBottom: 10 },
-  leadType: { color: colors.coral, fontSize: 9, letterSpacing: 1.1, fontWeight: '950' },
-  leadTitle: { color: colors.ink, fontSize: 16, fontWeight: '900', marginTop: 7 },
-  leadMode: { color: colors.muted, fontSize: 10, fontWeight: '800', marginTop: 5 },
-  leadText: { color: colors.muted, fontSize: 11.5, lineHeight: 17, marginTop: 7 },
-  locked: { backgroundColor: '#F2F0E9', borderRadius: 13, padding: 11, marginTop: 13 },
-  lockedText: { color: colors.muted, fontSize: 10, fontWeight: '800' },
-  emptyLead: { backgroundColor: '#F7F5EF' },
-  emptyLeadTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  emptyLeadText: { color: colors.muted, fontSize: 10.5, lineHeight: 16, marginTop: 4 },
+  stateField: { width: 88 },
+  note: { borderRadius: 15, backgroundColor: colors.sunSoft, borderWidth: 1, borderColor: '#E9D793', padding: 12, marginTop: 3 },
+  noteTitle: { color: colors.ink, fontSize: 10.5, fontWeight: '900' },
+  noteText: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 3 },
+  primaryButton: { minHeight: 52, borderRadius: 16, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', marginTop: 4, paddingHorizontal: 14 },
+  primaryButtonText: { color: colors.white, fontSize: 12.5, fontWeight: '950', textAlign: 'center' },
 });
