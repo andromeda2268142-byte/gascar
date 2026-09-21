@@ -42,6 +42,13 @@ type Dashboard = {
   open_support_tickets: number;
   unlocks: number;
   credits_outstanding: number;
+  place_impressions_30d: number;
+  place_views_30d: number;
+  place_directions_30d: number;
+  place_calls_30d: number;
+  place_websites_30d: number;
+  place_service_requests_30d: number;
+  place_unique_30d: number;
 };
 
 type Business = {
@@ -510,6 +517,24 @@ export default function AdminScreen() {
           ['Active services', dashboard?.services ?? 0, 'Marketplace catalog'],
           ['Lead unlocks', dashboard?.unlocks ?? 0, 'Paid/unlocked leads'],
           ['Support', dashboard?.open_support_tickets ?? 0, 'Open tickets'],
+        ].map(([label, value, detail]) => (
+          <View key={String(label)} style={[styles.metricCard, desktop && styles.metricCardDesktop]}>
+            <Text style={styles.metricLabel}>{label}</Text>
+            <Text style={styles.metricValue}>{value}</Text>
+            <Text style={styles.metricDetail}>{detail}</Text>
+          </View>
+        ))}
+      </View>
+
+      <Text style={styles.sectionTitle}>Automotive discovery · last 30 days</Text>
+      <View style={styles.metricGrid}>
+        {[
+          ['Map impressions', dashboard?.place_impressions_30d ?? 0, 'Businesses shown in discovery'],
+          ['Business views', dashboard?.place_views_30d ?? 0, (dashboard?.place_unique_30d ?? 0) + ' unique places engaged'],
+          ['Directions', dashboard?.place_directions_30d ?? 0, 'High-intent navigation clicks'],
+          ['Calls', dashboard?.place_calls_30d ?? 0, 'Calls started from Gas Car’s'],
+          ['Websites', dashboard?.place_websites_30d ?? 0, 'Business website clicks'],
+          ['Service requests', dashboard?.place_service_requests_30d ?? 0, 'Requests started after discovery'],
         ].map(([label, value, detail]) => (
           <View key={String(label)} style={[styles.metricCard, desktop && styles.metricCardDesktop]}>
             <Text style={styles.metricLabel}>{label}</Text>
