@@ -83,6 +83,18 @@ Deno.serve(async (req) => {
         return reply({ error: 'Invalid analytics event.' }, 400);
       }
 
+      const analyticsQuota = await admin.rpc('gascars_place_event_quota_public', {
+        p_client_id: clientId,
+        p_event_count: placeIds.length,
+      });
+      if (analyticsQuota.error) {
+        const message = analyticsQuota.error.message || '';
+        return reply(
+          { error: message.toLowerCase().includes('limit') ? 'Analytics limit reached.' : 'Could not authorize analytics event.' },
+          message.toLowerCase().includes('limit') ? 429 : 500,
+        );
+      }
+
       const userId = await optionalUserId(req);
       const { data, error } = await admin.rpc('gascars_track_place_events', {
         p_user_id: userId,
