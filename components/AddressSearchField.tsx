@@ -165,7 +165,7 @@ export function AddressSearchField({
               )}
             </Pressable>
           ))}
-          <Text style={styles.googleAttribution}>Powered by Google</Text>
+          <Text style={styles.googleAttribution}>Google Maps</Text>
         </View>
       ) : null}
     </View>
