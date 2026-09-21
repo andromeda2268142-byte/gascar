@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { getSupabaseClient, isSupabaseConfigured } from '@/lib/supabase';
 
 export type AddressSuggestion = {
   placeId: string;
@@ -15,122 +15,13 @@ export type AddressPlace = {
   postalCode: string | null;
 };
 
-function apiKey() {
-  const placesKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_KEY;
-  const webServiceKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_WEB_KEY;
+type AutocompleteResponse = {
+  suggestions?: AddressSuggestion[];
+  error?: string;
+};
 
-  if (placesKey || webServiceKey) return placesKey || webServiceKey || '';
-
-  if (Platform.OS === 'ios') {
-    return process.env.EXPO_PUBLIC_GOOGLE_MAPS_IOS_KEY || '';
-  }
-
-  if (Platform.OS === 'android') {
-    return process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_KEY || '';
-  }
-
-  return '';
-}
-
-export function isGooglePlacesConfigured() {
-  return Boolean(apiKey());
-}
-
-export async function searchGoogleAddresses(
-  input: string,
-  options?: {
-    latitude?: number | null;
-    longitude?: number | null;
-  },
-): Promise<AddressSuggestion[]> {
-  const key = apiKey();
-  const query = input.trim();
-
-  if (!key || query.length < 3) return [];
-
-  const body: Record<string, unknown> = {
-    input: query,
-    includedRegionCodes: ['us'],
-  };
-
-  if (
-    typeof options?.latitude === 'number'
-    && typeof options?.longitude === 'number'
-  ) {
-    body.locationBias = {
-      circle: {
-        center: {
-          latitude: options.latitude,
-          longitude: options.longitude,
-        },
-        radius: 50000,
-      },
-    };
-  }
-
-  const response = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': key,
-      'X-Goog-FieldMask': [
-        'suggestions.placePrediction.placeId',
-        'suggestions.placePrediction.text.text',
-        'suggestions.placePrediction.structuredFormat.mainText.text',
-        'suggestions.placePrediction.structuredFormat.secondaryText.text',
-      ].join(','),
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    throw new Error('Google address search is unavailable right now.');
-  }
-
-  const payload = await response.json() as {
-    suggestions?: Array<{
-      placePrediction?: {
-        placeId?: string;
-        text?: { text?: string };
-        structuredFormat?: {
-          mainText?: { text?: string };
-          secondaryText?: { text?: string };
-        };
-      };
-    }>;
-  };
-
-  return (payload.suggestions ?? [])
-    .map((suggestion) => suggestion.placePrediction)
-    .filter((prediction): prediction is NonNullable<typeof prediction> => Boolean(prediction?.placeId))
-    .slice(0, 5)
-    .map((prediction) => ({
-      placeId: prediction.placeId ?? '',
-      text: prediction.text?.text ?? '',
-      mainText: prediction.structuredFormat?.mainText?.text ?? prediction.text?.text ?? '',
-      secondaryText: prediction.structuredFormat?.secondaryText?.text ?? '',
-    }));
-}
-
-export async function loadGoogleAddress(placeId: string): Promise<AddressPlace> {
-  const key = apiKey();
-  if (!key) throw new Error('Google address search is not configured.');
-
-  const response = await fetch(
-    'https://places.googleapis.com/v1/places/' + encodeURIComponent(placeId),
-    {
-      headers: {
-        'X-Goog-Api-Key': key,
-        'X-Goog-FieldMask': 'id,formattedAddress,location,addressComponents',
-      },
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error('Could not load this address.');
-  }
-
-  const place = await response.json() as {
+type AddressDetailsResponse = {
+  place?: {
     id?: string;
     formattedAddress?: string;
     location?: {
@@ -143,6 +34,78 @@ export async function loadGoogleAddress(placeId: string): Promise<AddressPlace> 
       types?: string[];
     }>;
   };
+  error?: string;
+};
+
+function makeSessionId() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+const clientId = makeSessionId();
+
+async function invokePlaces<T>(body: Record<string, unknown>): Promise<T> {
+  const { data, error } = await getSupabaseClient().functions.invoke<T>('gascars-places', {
+    body: { ...body, clientId },
+  });
+
+  if (error) {
+    const context = (error as { context?: Response }).context;
+    if (context) {
+      try {
+        const payload = await context.clone().json() as { error?: string };
+        if (payload?.error) throw new Error(payload.error);
+      } catch (contextError) {
+        if (contextError instanceof Error && contextError.message !== 'Unexpected end of JSON input') {
+          throw contextError;
+        }
+      }
+    }
+    throw new Error(error.message || 'Google Places request failed.');
+  }
+
+  return data as T;
+}
+
+export function isGooglePlacesConfigured() {
+  return isSupabaseConfigured;
+}
+
+export async function searchGoogleAddresses(
+  input: string,
+  options?: {
+    latitude?: number | null;
+    longitude?: number | null;
+  },
+): Promise<AddressSuggestion[]> {
+  const query = input.trim();
+  if (!isSupabaseConfigured || query.length < 3) return [];
+
+  const payload = await invokePlaces<AutocompleteResponse>({
+    action: 'autocomplete',
+    input: query,
+    latitude: options?.latitude ?? null,
+    longitude: options?.longitude ?? null,
+  });
+
+  if (payload.error) throw new Error(payload.error);
+  return (payload.suggestions ?? []).slice(0, 5);
+}
+
+export async function loadGoogleAddress(placeId: string): Promise<AddressPlace> {
+  if (!isSupabaseConfigured) throw new Error('Google address search is not configured.');
+
+  const payload = await invokePlaces<AddressDetailsResponse>({
+    action: 'address_details',
+    placeId,
+  });
+
+  if (payload.error) throw new Error(payload.error);
+  const place = payload.place;
+  if (!place) throw new Error('Could not load this address.');
 
   const postalCode = place.addressComponents?.find((component) =>
     component.types?.includes('postal_code'),
