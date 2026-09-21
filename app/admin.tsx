@@ -531,8 +531,8 @@ export default function AdminScreen() {
         {[
           ['Map impressions', dashboard?.place_impressions_30d ?? 0, 'Businesses shown in discovery'],
           ['Business views', dashboard?.place_views_30d ?? 0, (dashboard?.place_unique_30d ?? 0) + ' unique places tracked'],
-          ['Directions', dashboard?.place_directions_30d ?? 0, 'High-intent navigation clicks'],
-          ['Calls', dashboard?.place_calls_30d ?? 0, 'Calls started from Gas Car’s'],
+          ['Directions', dashboard?.place_directions_30d ?? 0, 'Navigation clicks from Gas Car’s'],
+          ['Calls', dashboard?.place_calls_30d ?? 0, 'Call taps from Gas Car’s'],
           ['Websites', dashboard?.place_websites_30d ?? 0, 'Business website clicks'],
           ['Service requests', dashboard?.place_service_requests_30d ?? 0, 'Requests started after discovery'],
         ].map(([label, value, detail]) => (
