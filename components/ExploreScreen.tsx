@@ -239,6 +239,7 @@ export default function ExploreScreen() {
           <Text style={styles.sectionTitle}>{categoryTitle(category)}</Text>
           <Text style={styles.count}>{visiblePlaces.length} live results</Text>
         </View>
+        <Text style={styles.listAttribution}>Google Maps</Text>
 
         <View style={styles.grid}>
           {visiblePlaces.map((place) => {
@@ -372,6 +373,7 @@ const styles = StyleSheet.create({
   sectionRow: { marginTop: 22, marginBottom: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sectionTitle: { color: colors.ink, fontSize: 18, fontWeight: '900', textTransform: 'capitalize' },
   count: { color: colors.muted, fontSize: 10, fontWeight: '800' },
+  listAttribution: { color: colors.muted, fontSize: 8, fontWeight: '800', marginBottom: 9, textAlign: 'right' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   placeCard: { minWidth: 220, flexGrow: 1, flexBasis: '30%', borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, padding: 14 },
   placeCardSelected: { borderColor: colors.coral, backgroundColor: '#FFF8F4' },
