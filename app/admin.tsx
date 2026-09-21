@@ -530,7 +530,7 @@ export default function AdminScreen() {
       <View style={styles.metricGrid}>
         {[
           ['Map impressions', dashboard?.place_impressions_30d ?? 0, 'Businesses shown in discovery'],
-          ['Business views', dashboard?.place_views_30d ?? 0, (dashboard?.place_unique_30d ?? 0) + ' unique places engaged'],
+          ['Business views', dashboard?.place_views_30d ?? 0, (dashboard?.place_unique_30d ?? 0) + ' unique places tracked'],
           ['Directions', dashboard?.place_directions_30d ?? 0, 'High-intent navigation clicks'],
           ['Calls', dashboard?.place_calls_30d ?? 0, 'Calls started from Gas Car’s'],
           ['Websites', dashboard?.place_websites_30d ?? 0, 'Business website clicks'],
