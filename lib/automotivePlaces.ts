@@ -80,7 +80,20 @@ export async function searchAutomotivePlaces(options: {
     },
   });
 
-  if (error) throw new Error(error.message || 'Nearby search failed.');
+  if (error) {
+    const context = (error as { context?: Response }).context;
+    if (context) {
+      try {
+        const payload = await context.clone().json() as { error?: string };
+        if (payload?.error) throw new Error(payload.error);
+      } catch (contextError) {
+        if (contextError instanceof Error && contextError.message !== 'Unexpected end of JSON input') {
+          throw contextError;
+        }
+      }
+    }
+    throw new Error(error.message || 'Nearby search failed.');
+  }
   if (data?.error) throw new Error(data.error);
 
   return (data?.places ?? []).map((place) => ({
