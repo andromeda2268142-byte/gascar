@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
     if (rawBody.length > 8000) return reply({ error: 'Request too large.' }, 413);
 
     const body = JSON.parse(rawBody || '{}') as Record<string, unknown>;
-    const action = body.action === 'track' ? 'track' : 'search';
+    const action = typeof body.action === 'string' ? body.action : 'search';
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const secret = serviceKey();
@@ -108,6 +108,149 @@ Deno.serve(async (req) => {
       return reply({ tracked: data ?? 0 });
     }
 
+    const googleKey = Deno.env.get('GOOGLE_PLACES_API_KEY');
+    if (!googleKey) {
+      return reply({
+        error: 'Google Places is ready in the app but the production API key has not been connected yet.',
+        code: 'GOOGLE_NOT_CONFIGURED',
+      }, 503);
+    }
+
+    if (action === 'autocomplete') {
+      const input = typeof body.input === 'string' ? body.input.trim() : '';
+      const clientId = typeof body.clientId === 'string' ? body.clientId : '';
+      const latitude = Number(body.latitude);
+      const longitude = Number(body.longitude);
+
+      if (
+        input.length < 3
+        || input.length > 180
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId)
+      ) {
+        return reply({ error: 'Invalid address search.' }, 400);
+      }
+
+      const quota = await admin.rpc('gascars_places_quota_public', { p_client_id: clientId });
+      if (quota.error) {
+        const message = quota.error.message || '';
+        return reply({
+          error: message.toLowerCase().includes('limit')
+            ? 'Address search limit reached for today.'
+            : 'Could not authorize this address search.',
+        }, message.toLowerCase().includes('limit') ? 429 : 500);
+      }
+
+      const googleBody: Record<string, unknown> = {
+        input,
+        includedRegionCodes: ['us'],
+      };
+
+      if (
+        Number.isFinite(latitude)
+        && Number.isFinite(longitude)
+        && Math.abs(latitude) <= 90
+        && Math.abs(longitude) <= 180
+      ) {
+        googleBody.locationBias = {
+          circle: {
+            center: { latitude, longitude },
+            radius: 50000,
+          },
+        };
+      }
+
+      const response = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+        method: 'POST',
+        signal: AbortSignal.timeout(10000),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': googleKey,
+          'X-Goog-FieldMask': [
+            'suggestions.placePrediction.placeId',
+            'suggestions.placePrediction.text.text',
+            'suggestions.placePrediction.structuredFormat.mainText.text',
+            'suggestions.placePrediction.structuredFormat.secondaryText.text',
+          ].join(','),
+        },
+        body: JSON.stringify(googleBody),
+      });
+
+      if (!response.ok) {
+        const diagnostic = await response.text();
+        console.error('Google autocomplete error', response.status, diagnostic.slice(0, 500));
+        return reply({ error: 'Google address search is unavailable right now.' }, 502);
+      }
+
+      const payload = await response.json() as {
+        suggestions?: Array<{
+          placePrediction?: {
+            placeId?: string;
+            text?: { text?: string };
+            structuredFormat?: {
+              mainText?: { text?: string };
+              secondaryText?: { text?: string };
+            };
+          };
+        }>;
+      };
+
+      const suggestions = (payload.suggestions || [])
+        .map((suggestion) => suggestion.placePrediction)
+        .filter((prediction) => Boolean(prediction?.placeId))
+        .slice(0, 5)
+        .map((prediction) => ({
+          placeId: prediction?.placeId || '',
+          text: prediction?.text?.text || '',
+          mainText: prediction?.structuredFormat?.mainText?.text || prediction?.text?.text || '',
+          secondaryText: prediction?.structuredFormat?.secondaryText?.text || '',
+        }));
+
+      return reply({ suggestions });
+    }
+
+    if (action === 'address_details') {
+      const placeId = typeof body.placeId === 'string' ? body.placeId.trim() : '';
+      const clientId = typeof body.clientId === 'string' ? body.clientId : '';
+
+      if (
+        placeId.length < 3
+        || placeId.length > 255
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId)
+      ) {
+        return reply({ error: 'Invalid address selection.' }, 400);
+      }
+
+      const quota = await admin.rpc('gascars_places_quota_public', { p_client_id: clientId });
+      if (quota.error) {
+        const message = quota.error.message || '';
+        return reply({
+          error: message.toLowerCase().includes('limit')
+            ? 'Address search limit reached for today.'
+            : 'Could not authorize this address selection.',
+        }, message.toLowerCase().includes('limit') ? 429 : 500);
+      }
+
+      const response = await fetch(
+        'https://places.googleapis.com/v1/places/' + encodeURIComponent(placeId),
+        {
+          signal: AbortSignal.timeout(10000),
+          headers: {
+            'X-Goog-Api-Key': googleKey,
+            'X-Goog-FieldMask': 'id,formattedAddress,location,addressComponents',
+          },
+        },
+      );
+
+      if (!response.ok) {
+        const diagnostic = await response.text();
+        console.error('Google place details error', response.status, diagnostic.slice(0, 500));
+        return reply({ error: 'Could not load this address.' }, 502);
+      }
+
+      const place = await response.json();
+      return reply({ place });
+    }
+
     const latitude = Number(body.latitude);
     const longitude = Number(body.longitude);
     const category = body.category as Category;
@@ -119,14 +262,6 @@ Deno.serve(async (req) => {
       || !categories.includes(category) || !allowedRadii.includes(radius)
       || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId)) {
       return reply({ error: 'Invalid search area or category.' }, 400);
-    }
-
-    const googleKey = Deno.env.get('GOOGLE_PLACES_API_KEY');
-    if (!googleKey) {
-      return reply({
-        error: 'Google Places is ready in the app but the production API key has not been connected yet.',
-        code: 'GOOGLE_NOT_CONFIGURED',
-      }, 503);
     }
 
     const quota = await admin.rpc('gascars_places_quota_public', { p_client_id: clientId });
